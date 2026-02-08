@@ -1,0 +1,74 @@
+# --- Python Compiled Files ---
+__pycache__/
+*.py[cod]
+
+# Distribution / packaging
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- Jupyter Notebooks ---
+.ipynb_checkpoints/
+
+# --- Data & Large Files (Prevent Git Errors) ---
+data/
+datasets/
+models/
+checkpoints/
+
+# vim
+*.swp
+*.swo
+
+# Mypy cache
+.mypy_cache/
+
+# Block specific heavy file formats
+*.csv
+*.xlsx
+*.parquet
+*.pkl
+*.h5
+*.zip
+*.tar.gz
+*.npx
+*.npy
+*.npz
+
+# --- VS Code Settings (Optional) ---
+.vscode/
+.cursor/
+__MACOSX/
+
+# Environments
+build/
+dist/
+*.egg-info/
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Wandb
+wandb/
+
+# --- OS Generated Files ---
+.DS_Store
+Thumbs.db
