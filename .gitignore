@@ -24,14 +24,10 @@ var/
 .ipynb_checkpoints/
 
 # --- Data & Large Files (Prevent Git Errors) ---
-/data/*
-!/data/*/
-/datasets/*
-!/datasets/*/
-/models/*
-!/models/*/
-/checkpoints/*
-!/checkpoints/*/
+/data/
+/datasets/
+/models/
+/checkpoints/
 
 # vim
 *.swp
