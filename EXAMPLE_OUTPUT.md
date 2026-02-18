@@ -1,3 +1,4 @@
+```
 (hangtime_har) jovyan@jupyter-kyle-laguilles-928-my-csun-edu---4d054b9a:~/hangtime_har$ python main.py --gpu cpu --epochs 1 --batch_size 64
 Loading data...
 Processing dataset files ...
@@ -481,3 +482,4 @@ Train-Val-Recall Difference: -0.004316035313842614
 Train-Val-F1 Difference: 0.008106120850971787
 
 ALL FINISHED
+```
