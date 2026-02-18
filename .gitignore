@@ -131,3 +131,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Raw and preprocessed CSV files + logs
+data/raw/
+data/hangtime_*.csv
+logs/
+*.pt
+*.pth

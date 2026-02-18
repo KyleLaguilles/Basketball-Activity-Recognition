@@ -33,11 +33,45 @@ def create_hangtime_data(raw_dir, save_dir):
 
     for filename in filenames:
         print("Processing {}...".format(filename))
-        sbj_name = filename.split('/')[-1].split('.')[0]
-        sbj_meta = meta_data[sbj_name]
-        sbj_location = sbj_meta['location']
+
+        ########## from original file: ####################
+        # sbj_name = filename.split('/')[-1].split('.')[0]
+        # sbj_meta = meta_data[sbj_name]
+        # sbj_location = sbj_meta['location']
+        # sbj_level = sbj_meta['skill']
+        # sbj_gender = sbj_meta['gender']
+        # sbj_data = pd.read_csv(filename)
+        # sbj_data = sbj_data[(sbj_data['coarse'] != 'not_labeled')]
+
+        # sbj_data['skill'] = sbj_level
+        # sbj_data['gender'] = sbj_gender
+        # sbj_data['location'] = sbj_location
+
+        # sbj_data = sbj_data.drop(['timestamp', 'in/out'], axis=1).reset_index()
+        # sbj_data = sbj_data[['location', 'skill', 'gender', 'subject', 'acc_x', 'acc_y', 'acc_z', 'basketball', 'locomotion', 'coarse']]
+        # sbj_data['subject'] = sbj_name
+
+        ########### replacement, which reads current raw files: ##############
+        sbj_name = os.path.basename(filename).split('.')[0]  # e.g. "05d8_eu"
+        parts = sbj_name.split('_')
+        sbj_id = parts[0]                                   # e.g. "05d8"
+        sbj_location = parts[1] if len(parts) > 1 else None # e.g. "eu"
+
+        # meta.txt structure: { "eu": { "05d8": {...}}, "na": {...} }
+        if sbj_location is None:
+            # fallback: search both groups if filename doesn't include _eu/_us
+            if sbj_id in meta_data.get("eu", {}):
+                sbj_location = "eu"
+            elif sbj_id in meta_data.get("na", {}):
+                sbj_location = "na"
+            else:
+                raise KeyError(f"Subject '{sbj_id}' not found in meta under 'eu' or 'na'")
+
+        # pull metadata
+        sbj_meta = meta_data[sbj_location][sbj_id]
         sbj_level = sbj_meta['skill']
         sbj_gender = sbj_meta['gender']
+
         sbj_data = pd.read_csv(filename)
         sbj_data = sbj_data[(sbj_data['coarse'] != 'not_labeled')]
 
@@ -46,8 +80,12 @@ def create_hangtime_data(raw_dir, save_dir):
         sbj_data['location'] = sbj_location
 
         sbj_data = sbj_data.drop(['timestamp', 'in/out'], axis=1).reset_index()
-        sbj_data = sbj_data[['location', 'skill', 'gender', 'subject', 'acc_x', 'acc_y', 'acc_z', 'basketball', 'locomotion', 'coarse']]
-        sbj_data['subject'] = sbj_name
+        sbj_data = sbj_data[['location', 'skill', 'gender', 'subject',
+                            'acc_x', 'acc_y', 'acc_z',
+                            'basketball', 'locomotion', 'coarse']]
+
+        sbj_data['subject'] = sbj_id   # ← changed from sbj_name
+        ############## end of replacement #############################
         sbj_all = sbj_data
         
         print('LABEL DISTRIBUTION ({})'.format(sbj_name))

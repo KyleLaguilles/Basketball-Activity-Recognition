@@ -273,7 +273,13 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
         for i, lbl in enumerate(np.unique(train_labels)):
             all_class_weights[int(lbl)] = class_weights[i]
         if config['loss'] == 'cross_entropy':
-            loss.weight = all_class_weights.cuda()
+            ##########replacement:###############
+            if config.get("gpu", "cpu") != "cpu" and torch.cuda.is_available():
+                loss.weight = all_class_weights.cuda()
+            else:
+                loss.weight = all_class_weights
+            ########## end replacement ##########
+            #loss.weight = all_class_weights.cuda() # original line
         print('Applied weighted class weights: ')
         print(class_weights)
     else:
@@ -283,7 +289,13 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
         for i, lbl in enumerate(np.unique(train_labels)):
             all_class_weights[int(lbl)] = class_weights[i]
         if config['loss'] == 'cross_entropy':
-            loss.weight = all_class_weights.cuda()
+            ##########replacement:###############
+            if config.get("gpu", "cpu") != "cpu" and torch.cuda.is_available():
+                loss.weight = all_class_weights.cuda()
+            else:
+                loss.weight = all_class_weights
+            ########## end replacement ##########
+            #loss.weight = all_class_weights.cuda() # original line
 
     # initialize optimizer and loss
     opt, criterion = optimizer, loss
