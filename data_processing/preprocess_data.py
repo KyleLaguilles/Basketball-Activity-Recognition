@@ -38,12 +38,6 @@ def load_dataset(test_type, test_case, include_void=False):
     data = pd.concat((data_drill, data_warmup, data_game), axis=0)
     data_dandw = pd.concat((data_drill, data_warmup), axis=0)
 
-    ########## from original file: ####################
-    # subjects = data.iloc[:, 3].unique()
-    # le = preprocessing.LabelEncoder()
-    # le.fit(subjects)
-
-    ########## replacement: ####################
     # force subject column to string to avoid mixed dtype
     data.iloc[:, 3] = data.iloc[:, 3].astype(str)
     data_dandw.iloc[:, 3] = data_dandw.iloc[:, 3].astype(str)
@@ -54,8 +48,6 @@ def load_dataset(test_type, test_case, include_void=False):
 
     le = preprocessing.LabelEncoder()
     le.fit(subjects)
-    ########## end replacement ####################
-
 
     data.iloc[:, 3] = le.transform(data.iloc[:, 3])
     data_dandw.iloc[:, 3] = le.transform(data_dandw.iloc[:, 3])
@@ -178,7 +170,7 @@ def adjust_labels(data_y):
         Modified sensor labels
     """
 
-    data_y = data_y.astype("object") # added line
+    data_y = data_y.astype("object")
 
     data_y[data_y == "void"] = 0
     data_y[data_y == 'dribbling'] = 1
