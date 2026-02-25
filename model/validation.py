@@ -189,11 +189,6 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                 f"train_val_gap_{args.name}.csv",
             ]:
                 wandb.save(os.path.join(log_dir, fname), policy="now")
-            # run["analysis"].upload(os.path.join(log_dir, 'cp_scores_acc_{}.csv'.format(args.name)))
-            # run["analysis"].upload(os.path.join(log_dir, 'cp_scores_prec_{}.csv'.format(args.name)))
-            # run["analysis"].upload(os.path.join(log_dir, 'cp_scores_rec_{}.csv'.format(args.name)))
-            # run["analysis"].upload(os.path.join(log_dir, 'cp_scores_f1_{}.csv'.format(args.name)))
-            # run["analysis"].upload(os.path.join(log_dir, 'train_val_gap_{}.csv'.format(args.name)))
 
     # fill values for normal evaluation
     labels = list(range(0, args.nb_classes))
@@ -237,7 +232,6 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
     if run is not None:
         all_path = os.path.join(log_dir, "conf_mats", "all.png")
         wandb.log({"conf_matrices/all": wandb.Image(all_path)})
-        #run['conf_matrices'].append(File(os.path.join(log_dir,  'conf_mats', 'all.png')), name='all')
     
     # submit final values to wandb 
     if run is not None:
