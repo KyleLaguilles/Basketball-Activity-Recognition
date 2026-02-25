@@ -1,13 +1,5 @@
-(hangtime_har) jovyan@jupyter-kyle-laguilles-928-my-csun-edu---4d054b9a:~/hangtime_har$ python main.py --gpu cpu --epochs 1 --batch_size 64 --wandb
-wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/jovyan/.netrc.
-wandb: Currently logged in as: kyle-laguilles15 (kyle-laguilles15-california-state-university-northridge) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
-wandb: Tracking run with wandb version 0.25.0
-wandb: Run data is saved locally in /home/jovyan/hangtime_har/wandb/run-20260225_003433-zcmkelpx
-wandb: Run `wandb offline` to turn off syncing.
-wandb: Syncing run hypertuning_loso_us_deepconvlstm
-wandb: ⭐️ View project at https://wandb.ai/kyle-laguilles15-california-state-university-northridge/hangtime_har
-wandb: 🚀 View run at https://wandb.ai/kyle-laguilles15-california-state-university-northridge/hangtime_har/runs/zcmkelpx
-wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+```
+(hangtime_har) jovyan@jupyter-kyle-laguilles-928-my-csun-edu---4d054b9a:~/hangtime_har$ python main.py --gpu cpu --epochs 1 --batch_size 64
 Loading data...
 Processing dataset files ...
 Full dataset with size: | X (4933521, 4) | y (4933521,) | 
@@ -96,7 +88,6 @@ F1: 29.78 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 1. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 EPOCH: 1/1 
 Train Loss: 1.1511 Train Acc (M): 30.19 (%) Train Prc (M): 32.66 (%) Train Rcl (M): 30.19 (%) Train F1 (M): 29.53 (%) 
 Valid Loss: 0.9544 Valid Acc (M): 33.05 (%) Valid Prc (M): 80.88 (%) Valid Rcl (M): 33.05 (%) Valid F1 (M): 32.35 (%)
@@ -127,7 +118,6 @@ F1: 32.35 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 2. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 EPOCH: 1/1 
 Train Loss: 1.1700 Train Acc (M): 29.05 (%) Train Prc (M): 32.45 (%) Train Rcl (M): 29.05 (%) Train F1 (M): 28.51 (%) 
 Valid Loss: 1.1216 Valid Acc (M): 27.48 (%) Valid Prc (M): 70.80 (%) Valid Rcl (M): 27.48 (%) Valid F1 (M): 26.11 (%)
@@ -158,7 +148,7 @@ F1: 26.11 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 3. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+
 EPOCH: 1/1 
 Train Loss: 1.1450 Train Acc (M): 29.41 (%) Train Prc (M): 33.69 (%) Train Rcl (M): 29.41 (%) Train F1 (M): 28.75 (%) 
 Valid Loss: 1.0384 Valid Acc (M): 31.69 (%) Valid Prc (M): 83.39 (%) Valid Rcl (M): 31.69 (%) Valid F1 (M): 28.51 (%)
@@ -170,7 +160,6 @@ Recall: 31.69 (%)
 F1: 28.51 (%)
 
  VALIDATING FOR SUBJECT 4991; 6 OF 15
-wandb: WARNING Tried to log to step 0 that is less than the current step 4. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 +----------------------------+------------+
 |          Modules           | Parameters |
 +----------------------------+------------+
@@ -194,7 +183,6 @@ EPOCH: 1/1
 Train Loss: 1.1493 Train Acc (M): 29.90 (%) Train Prc (M): 33.94 (%) Train Rcl (M): 29.90 (%) Train F1 (M): 29.19 (%) 
 Valid Loss: 1.1191 Valid Acc (M): 27.70 (%) Valid Prc (M): 73.94 (%) Valid Rcl (M): 27.70 (%) Valid F1 (M): 25.81 (%)
 Performance improved... (0.0->0.2580623483323252)
-wandb: WARNING Tried to log to step 0 that is less than the current step 5. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 SUBJECT 4991 VALIDATION RESULTS: 
 Accuracy: 27.70 (%)
 Precision: 73.94 (%)
@@ -251,7 +239,6 @@ F1: 22.93 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 6. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 EPOCH: 1/1 
 Train Loss: 1.1569 Train Acc (M): 29.30 (%) Train Prc (M): 33.29 (%) Train Rcl (M): 29.30 (%) Train F1 (M): 28.98 (%) 
 Valid Loss: 1.0309 Valid Acc (M): 31.92 (%) Valid Prc (M): 79.16 (%) Valid Rcl (M): 31.92 (%) Valid F1 (M): 28.13 (%)
@@ -282,7 +269,6 @@ F1: 28.13 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 7. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 EPOCH: 1/1 
 Train Loss: 1.1476 Train Acc (M): 29.85 (%) Train Prc (M): 34.14 (%) Train Rcl (M): 29.85 (%) Train F1 (M): 29.22 (%) 
 Valid Loss: 1.1034 Valid Acc (M): 27.77 (%) Valid Prc (M): 79.31 (%) Valid Rcl (M): 27.77 (%) Valid F1 (M): 23.18 (%)
@@ -313,7 +299,6 @@ F1: 23.18 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 8. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 EPOCH: 1/1 
 Train Loss: 1.1548 Train Acc (M): 30.11 (%) Train Prc (M): 34.13 (%) Train Rcl (M): 30.11 (%) Train F1 (M): 29.22 (%) 
 Valid Loss: 0.9708 Valid Acc (M): 32.50 (%) Valid Prc (M): 78.95 (%) Valid Rcl (M): 32.50 (%) Valid F1 (M): 28.27 (%)
@@ -344,7 +329,6 @@ F1: 28.27 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 9. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 EPOCH: 1/1 
 Train Loss: 1.1531 Train Acc (M): 29.72 (%) Train Prc (M): 32.95 (%) Train Rcl (M): 29.72 (%) Train F1 (M): 28.96 (%) 
 Valid Loss: 1.0283 Valid Acc (M): 32.68 (%) Valid Prc (M): 82.78 (%) Valid Rcl (M): 32.68 (%) Valid F1 (M): 29.65 (%)
@@ -375,7 +359,6 @@ F1: 29.65 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 10. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 EPOCH: 1/1 
 Train Loss: 1.1669 Train Acc (M): 29.58 (%) Train Prc (M): 32.93 (%) Train Rcl (M): 29.58 (%) Train F1 (M): 28.72 (%) 
 Valid Loss: 1.1659 Valid Acc (M): 29.09 (%) Valid Prc (M): 82.59 (%) Valid Rcl (M): 29.09 (%) Valid F1 (M): 24.95 (%)
@@ -406,7 +389,6 @@ F1: 24.95 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 11. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 EPOCH: 1/1 
 Train Loss: 1.1745 Train Acc (M): 29.60 (%) Train Prc (M): 32.61 (%) Train Rcl (M): 29.60 (%) Train F1 (M): 28.84 (%) 
 Valid Loss: 1.0351 Valid Acc (M): 33.58 (%) Valid Prc (M): 80.00 (%) Valid Rcl (M): 33.58 (%) Valid F1 (M): 31.15 (%)
@@ -437,7 +419,6 @@ F1: 31.15 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 12. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 EPOCH: 1/1 
 Train Loss: 1.1452 Train Acc (M): 29.92 (%) Train Prc (M): 45.40 (%) Train Rcl (M): 29.92 (%) Train F1 (M): 29.45 (%) 
 Valid Loss: 1.0298 Valid Acc (M): 31.87 (%) Valid Prc (M): 84.87 (%) Valid Rcl (M): 31.87 (%) Valid F1 (M): 32.24 (%)
@@ -468,7 +449,6 @@ F1: 32.24 (%)
 |          fc.bias           |     9      |
 +----------------------------+------------+
 Total Params: 302153
-wandb: WARNING Tried to log to step 0 that is less than the current step 13. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
 EPOCH: 1/1 
 Train Loss: 1.1575 Train Acc (M): 29.88 (%) Train Prc (M): 34.96 (%) Train Rcl (M): 29.88 (%) Train F1 (M): 29.33 (%) 
 Valid Loss: 1.1307 Valid Acc (M): 29.35 (%) Valid Prc (M): 56.20 (%) Valid Rcl (M): 29.35 (%) Valid F1 (M): 27.99 (%)
@@ -502,31 +482,4 @@ Train-Val-Recall Difference: -0.004316035313842614
 Train-Val-F1 Difference: 0.008106120850971787
 
 ALL FINISHED
-wandb: 
-wandb: Run history:
-wandb:             sbj_0/lr ▁
-wandb:     sbj_0/train_loss ▁
-wandb:  sbj_0/val/acc_macro ▁
-wandb:   sbj_0/val/f1_macro ▁
-wandb: sbj_0/val/prec_macro ▁
-wandb:  sbj_0/val/rec_macro ▁
-wandb:       sbj_0/val_loss ▁
-wandb: 
-wandb: Run summary:
-wandb:       final_accuracy 0.30247
-wandb:             final_f1 0.28401
-wandb:      final_precision 0.59098
-wandb:         final_recall 0.30247
-wandb:             sbj_0/lr 0.0001
-wandb:     sbj_0/train_loss 1.15096
-wandb:  sbj_0/val/acc_macro 0.26336
-wandb:   sbj_0/val/f1_macro 0.22989
-wandb: sbj_0/val/prec_macro 0.69087
-wandb:  sbj_0/val/rec_macro 0.26336
-wandb:                   +5 ...
-wandb: 
-wandb:  View run hypertuning_loso_us_deepconvlstm at: https://wandb.ai/kyle-laguilles15-california-state-university-northridge/hangtime_har/runs/zcmkelpx
-wandb:  View project at: https://wandb.ai/kyle-laguilles15-california-state-university-northridge/hangtime_har
-wandb: Synced 5 W&B file(s), 16 media file(s), 0 artifact file(s) and 1 other file(s)
-wandb: Find logs at: ./wandb/run-20260225_003433-zcmkelpx/logs
-wandb: WARNING Tried to log to step 0 that is less than the current step 14. Steps must be monotonically increasing, so this data will be ignored. See https://wandb.me/define-metric to log data out of order.
+```
