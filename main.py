@@ -7,6 +7,7 @@
 
 import argparse
 import datetime
+import wandb
 import json
 import os
 import time
@@ -17,7 +18,6 @@ from model.validation import cross_participant_cv, train_valid_split
 
 from misc.logging import Logger
 from misc.torchutils import seed_torch
-
 
 """
 DATASET OPTIONS:
@@ -130,18 +130,17 @@ LOGGING OPTIONS:
 """
 
 NAME = 'test_experiment'
+WANDB = False
 VERBOSE = False
 PRINT_FREQ = 100
 SAVE_PREDICTIONS = False
 SAVE_CHECKPOINTS = False
 SAVE_ANALYSIS = False
 
-
 def main(args):
     if args.wandb:
-        import wandb
         run = wandb.init(
-            project="hangtime_har",   # change if needed
+            project="hangtime_har",
             name=f"{args.test_type}_{args.test_case}_{args.network}",
             config=vars(args),
         )
@@ -160,13 +159,10 @@ def main(args):
 
     # upload cfg to W&B (shows under the run's Files)
     if run is not None:
-        import wandb
         wandb.save(cfg_path, policy="now")
 
     # apply the chosen random seed to all relevant parts
     seed_torch(args.seed)
-        
-    
 
     ################################################## DATA LOADING ####################################################
 
@@ -196,7 +192,6 @@ def main(args):
 
     if args.wandb and run is not None:
         run.finish()  # close W & B run properly
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -251,7 +246,7 @@ if __name__ == '__main__':
 
     # LOGGING OPTIONS
     parser.add_argument('--name', default=NAME, type=str)
-    parser.add_argument('--wandb', action='store_true', help='Use Weights & Biases logging') # replace neptune
+    parser.add_argument('--wandb', default=WANDB, action='store_true', help='Use Weights & Biases logging')
     parser.add_argument('--verbose', default=VERBOSE, action='store_true')
     parser.add_argument('--save_predictions', default=SAVE_PREDICTIONS, action='store_true')
     parser.add_argument('--save_checkpoints', default=SAVE_CHECKPOINTS, action='store_true')
