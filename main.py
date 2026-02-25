@@ -17,7 +17,7 @@ from model.validation import cross_participant_cv, train_valid_split
 
 from misc.logging import Logger
 from misc.torchutils import seed_torch
-import neptune
+
 
 """
 DATASET OPTIONS:
@@ -121,7 +121,7 @@ ES_PATIENCE = 10
 """
 LOGGING OPTIONS:
 - NAME: name of the experiment; used for logging purposes
-- NEPTUNE: boolean whether to use neptune.ai for logging (please provide credentials below!)
+- WANDB: boolean whether to use wandb.ai for logging (please provide credentials below!)
 - VERBOSE: boolean whether to print batchwise results during epochs
 - PRINT_FREQ: number of batches after which batchwise results are printed
 - SAVE_PREDICTIONS: boolean whether to save predictions made by models
@@ -130,7 +130,6 @@ LOGGING OPTIONS:
 """
 
 NAME = 'test_experiment'
-NEPTUNE = False
 VERBOSE = False
 PRINT_FREQ = 100
 SAVE_PREDICTIONS = False
@@ -139,26 +138,31 @@ SAVE_ANALYSIS = False
 
 
 def main(args):
-    if args.neptune:
-        run = neptune.init_run(
-        project=None,
-        api_token=None,
+    if args.wandb:
+        import wandb
+        run = wandb.init(
+            project="hangtime_har",   # change if needed
+            name=f"{args.test_type}_{args.test_case}_{args.network}",
+            config=vars(args),
         )
     else:
         run = None
 
     ts = datetime.datetime.fromtimestamp(int(time.time()))
     log_dir = os.path.join('logs', args.test_type, args.test_case, args.network, str(ts))
+    os.makedirs(log_dir, exist_ok=True)
     sys.stdout = Logger(os.path.join(log_dir, 'log.txt'))
 
     # save the current cfg
-    with open(os.path.join(log_dir, 'cfg.txt'), 'w') as fid:
-        json.dump(args.__dict__, fid, indent=2)
-    
-    if args.neptune:
-        run['config'].upload(os.path.join(log_dir, 'cfg.txt'))
-        run['params'] = args
-    
+    cfg_path = os.path.join(log_dir, 'cfg.txt')
+    with open(cfg_path, 'w') as fid:
+        json.dump(vars(args), fid, indent=2)
+
+    # upload cfg to W&B (shows under the run's Files)
+    if run is not None:
+        import wandb
+        wandb.save(cfg_path, policy="now")
+
     # apply the chosen random seed to all relevant parts
     seed_torch(args.seed)
         
@@ -189,6 +193,9 @@ def main(args):
         _ = train_valid_split(train, valid, args, log_dir, run)
 
     print("\nALL FINISHED")
+
+    if args.wandb and run is not None:
+        run.finish()  # close W & B run properly
 
 
 if __name__ == '__main__':
@@ -234,7 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('--smoothing', default=SMOOTHING, type=float)
     parser.add_argument('--gpu', default=GPU, type=str)
     parser.add_argument('--weighted', default=WEIGHTED, action='store_true')
-    parser.add_argument('--shuffling', default=WEIGHTED, action='store_true')
+    parser.add_argument('--shuffling', default=SHUFFLING, action='store_true')
     parser.add_argument('--adj_lr', default=ADJ_LR, action='store_true')
     parser.add_argument('--lr_scheduler', default=LR_SCHEDULER, type=str)
     parser.add_argument('--lr_step', default=LR_STEP, type=int)
@@ -244,9 +251,9 @@ if __name__ == '__main__':
 
     # LOGGING OPTIONS
     parser.add_argument('--name', default=NAME, type=str)
-    parser.add_argument('--neptune', default=NEPTUNE, action='store_true')
+    parser.add_argument('--wandb', action='store_true', help='Use Weights & Biases logging') # replace neptune
     parser.add_argument('--verbose', default=VERBOSE, action='store_true')
-    parser.add_argument('--save_predictions', default=SAVE_CHECKPOINTS, action='store_true')
+    parser.add_argument('--save_predictions', default=SAVE_PREDICTIONS, action='store_true')
     parser.add_argument('--save_checkpoints', default=SAVE_CHECKPOINTS, action='store_true')
     parser.add_argument('--save_analysis', default=SAVE_ANALYSIS, action='store_true')
 

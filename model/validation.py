@@ -18,7 +18,7 @@ from misc.osutils import mkdir_if_missing
 from model.AttendAndDiscriminate import AttendAndDiscriminate
 from model.DeepConvLSTM import DeepConvLSTM
 from model.train import train, init_optimizer, init_loss, init_scheduler
-from neptune.types import File
+import wandb
 
 def cross_participant_cv(data, args, log_dir=None, run=None):
     """
@@ -154,7 +154,8 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         mkdir_if_missing(os.path.join(log_dir, 'conf_mats'))
         plt.savefig(os.path.join(log_dir, 'conf_mats', 'sbj_' + str(int(sbj)) + '.png'))
         if run is not None:
-            run['conf_matrices'].append(File(os.path.join(log_dir, 'conf_mats', 'sbj_' + str(int(sbj)) + '.png')), name='sbj_' + str(int(sbj)))
+            cm_path = os.path.join(log_dir, "conf_mats", f"sbj_{int(sbj)}.png")
+            wandb.log({f"conf_matrices/sbj_{int(sbj)}": wandb.Image(cm_path)})
 
     if args.save_analysis:
         cp_score_acc = pd.DataFrame(cp_scores[0, :, :], index=None)
@@ -180,11 +181,19 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         tv_gap.to_csv(os.path.join(log_dir, 'train_val_gap_{}.csv').format(args.name))
         
         if run is not None:    
-            run["analysis"].upload(os.path.join(log_dir, 'cp_scores_acc_{}.csv'.format(args.name)))
-            run["analysis"].upload(os.path.join(log_dir, 'cp_scores_prec_{}.csv'.format(args.name)))
-            run["analysis"].upload(os.path.join(log_dir, 'cp_scores_rec_{}.csv'.format(args.name)))
-            run["analysis"].upload(os.path.join(log_dir, 'cp_scores_f1_{}.csv'.format(args.name)))
-            run["analysis"].upload(os.path.join(log_dir, 'train_val_gap_{}.csv'.format(args.name)))
+            for fname in [
+                f"cp_scores_acc_{args.name}.csv",
+                f"cp_scores_prec_{args.name}.csv",
+                f"cp_scores_rec_{args.name}.csv",
+                f"cp_scores_f1_{args.name}.csv",
+                f"train_val_gap_{args.name}.csv",
+            ]:
+                wandb.save(os.path.join(log_dir, fname), policy="now")
+            # run["analysis"].upload(os.path.join(log_dir, 'cp_scores_acc_{}.csv'.format(args.name)))
+            # run["analysis"].upload(os.path.join(log_dir, 'cp_scores_prec_{}.csv'.format(args.name)))
+            # run["analysis"].upload(os.path.join(log_dir, 'cp_scores_rec_{}.csv'.format(args.name)))
+            # run["analysis"].upload(os.path.join(log_dir, 'cp_scores_f1_{}.csv'.format(args.name)))
+            # run["analysis"].upload(os.path.join(log_dir, 'train_val_gap_{}.csv'.format(args.name)))
 
     # fill values for normal evaluation
     labels = list(range(0, args.nb_classes))
@@ -226,18 +235,21 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
     mkdir_if_missing(os.path.join(log_dir, 'conf_mats'))
     plt.savefig(os.path.join(log_dir, 'conf_mats', 'all.png'))
     if run is not None:
-        run['conf_matrices'].append(File(os.path.join(log_dir,  'conf_mats', 'all.png')), name='all')
+        all_path = os.path.join(log_dir, "conf_mats", "all.png")
+        wandb.log({"conf_matrices/all": wandb.Image(all_path)})
+        #run['conf_matrices'].append(File(os.path.join(log_dir,  'conf_mats', 'all.png')), name='all')
     
-    # submit final values to neptune 
+    # submit final values to wandb 
     if run is not None:
-        run['final_accuracy'] = np.nanmean(v_acc)
-        run['final_precision'] = np.nanmean(v_prec)
-        run['final_recall'] = np.nanmean(v_rec)
-        run['final_f1'] = np.nanmean(v_f1)
-        run['train-val-acc-diff'] = np.nanmean(t_acc) - np.nanmean(v_acc)
-        run['train-val-prec-diff'] = np.nanmean(t_prec) - np.nanmean(v_prec)
-        run['train-val-rec-diff'] = np.nanmean(t_rec) - np.nanmean(v_rec)
-        run['train-val-f1-diff'] = np.nanmean(t_f1) - np.nanmean(v_f1)
+        run.summary["final_accuracy"] = float(np.nanmean(v_acc))
+        run.summary["final_precision"] = float(np.nanmean(v_prec))
+        run.summary["final_recall"] = float(np.nanmean(v_rec))
+        run.summary["final_f1"] = float(np.nanmean(v_f1))
+
+        run.summary["train-val-acc-diff"] = float(np.nanmean(t_acc) - np.nanmean(v_acc))
+        run.summary["train-val-prec-diff"] = float(np.nanmean(t_prec) - np.nanmean(v_prec))
+        run.summary["train-val-rec-diff"] = float(np.nanmean(t_rec) - np.nanmean(v_rec))
+        run.summary["train-val-f1-diff"] = float(np.nanmean(t_f1) - np.nanmean(v_f1))
     
     return net
 
@@ -362,8 +374,11 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
         tv_gap.to_csv(os.path.join(log_dir, 'tv_gap_{}.csv'.format(args.name)))
 
         if run is not None:    
-            run["analysis"].upload(os.path.join(log_dir, 'split_scores_{}.csv'.format(args.name)))
-            run["analysis"].upload(os.path.join(log_dir, 'tv_gap_{}.csv'.format(args.name)))
+            for fname in [
+                f"split_scores_{args.name}.csv",
+                f"tv_gap_{args.name}.csv",
+            ]:
+                wandb.save(os.path.join(log_dir, fname), policy="now")
     
     # save final postprocessed confusion matrix
     _, ax = plt.subplots(figsize=(15, 15), layout="constrained")
@@ -373,17 +388,19 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
     mkdir_if_missing(os.path.join(log_dir, 'conf_mats'))
     plt.savefig(os.path.join(log_dir, 'conf_mats', 'all.png'))
     if run is not None:
-        run['conf_matrices'].append(File(os.path.join(log_dir, 'conf_mats', 'all.png')), name='all')
+        all_path = os.path.join(log_dir, "conf_mats", "all.png")
+        wandb.log({"conf_matrices/all": wandb.Image(all_path)})
     
-    # submit final values to neptune 
+    # submit final values to wandb 
     if run is not None:
-        run['final_accuracy'] = np.nanmean(v_acc)
-        run['final_precision'] = np.nanmean(v_prec)
-        run['final_recall'] = np.nanmean(v_rec)
-        run['final_f1'] = np.nanmean(v_f1)
-        run['train-val-acc-diff'] = np.nanmean(t_acc) - np.nanmean(v_acc)
-        run['train-val-prec-diff'] = np.nanmean(t_prec) - np.nanmean(v_prec)
-        run['train-val-rec-diff'] = np.nanmean(t_rec) - np.nanmean(v_rec)
-        run['train-val-f1-diff'] = np.nanmean(t_f1) - np.nanmean(v_f1)
+        run.summary["final_accuracy"] = float(np.nanmean(v_acc))
+        run.summary["final_precision"] = float(np.nanmean(v_prec))
+        run.summary["final_recall"] = float(np.nanmean(v_rec))
+        run.summary["final_f1"] = float(np.nanmean(v_f1))
+
+        run.summary["train-val-acc-diff"] = float(np.nanmean(t_acc) - np.nanmean(v_acc))
+        run.summary["train-val-prec-diff"] = float(np.nanmean(t_prec) - np.nanmean(v_prec))
+        run.summary["train-val-rec-diff"] = float(np.nanmean(t_rec) - np.nanmean(v_rec))
+        run.summary["train-val-f1-diff"] = float(np.nanmean(t_f1) - np.nanmean(v_f1))
         
     return net

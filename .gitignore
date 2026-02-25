@@ -97,3 +97,4 @@ data/hangtime_*.csv
 logs/
 *.pt
 *.pth
+wandb/

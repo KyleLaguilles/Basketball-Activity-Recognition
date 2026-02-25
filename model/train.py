@@ -23,6 +23,7 @@ from torch.utils.data import DataLoader
 from misc.osutils import mkdir_if_missing
 from misc.torchutils import count_parameters, seed_worker
 from model.DeepConvLSTM import ConvBlock, ConvBlockSkip, ConvBlockFixup
+import wandb
 
 
 def init_weights(network):
@@ -225,8 +226,22 @@ def init_scheduler(optimizer, config):
         return None
     return scheduler
 
+def train(train_features, train_labels, val_features, val_labels, network, optimizer, loss, config, name=None, run=None, lr_scheduler=None,
+):
+    """
+    Patched version of the original training loop with the same behavior:
+    - per-epoch metrics printed + (optional) logged to W&B
+    - early stopping unchanged
+    - LR scheduler handling unchanged
+    - returns same objects/shapes as before
 
-def train(train_features, train_labels, val_features, val_labels, network, optimizer, loss, config, name = None, run = None, lr_scheduler=None):
+    Fixes:
+    - W&B logging uses wandb.log instead of run[name].append
+    - "best model" really corresponds to best epoch (reload best checkpoint at end)
+    - avoids O(n^2) np.concatenate inside the batch loop
+    - pin_memory is enabled only when using CUDA
+    """
+
     """
     Method to train a PyTorch network.
 
@@ -261,210 +276,252 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
 
     # init network using weight initialization of choice
     network = init_weights(network)
-    # send network to GPU
-    network.to(config['gpu'])
+
+    # normalize / derive device
+    device = config.get("gpu", "cpu")
+    device = torch.device(device) if not isinstance(device, torch.device) else device
+
+    # send network to device
+    network.to(device)
     network.train()
 
     # if weighted loss chosen, calculate weights based on training dataset; else each class is weighted equally
-    if config['weighted']:
-        all_class_weights = torch.from_numpy(np.ones(config['nb_classes'])).float()
+    if config["weighted"]:
+        all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
         class_weights = torch.from_numpy(
-            compute_class_weight('balanced', classes=np.unique(train_labels + 1), y=train_labels + 1)).float()
+            compute_class_weight(
+                "balanced", classes=np.unique(train_labels + 1), y=train_labels + 1
+            )
+        ).float()
         for i, lbl in enumerate(np.unique(train_labels)):
             all_class_weights[int(lbl)] = class_weights[i]
-        if config['loss'] == 'cross_entropy':
-            if config.get("gpu", "cpu") != "cpu" and torch.cuda.is_available():
-                loss.weight = all_class_weights.cuda()
-            else:
-                loss.weight = all_class_weights
-        print('Applied weighted class weights: ')
+
+        if config["loss"] == "cross_entropy":
+            loss.weight = all_class_weights.to(device)
+
+        print("Applied weighted class weights: ")
         print(class_weights)
     else:
-        all_class_weights = torch.from_numpy(np.ones(config['nb_classes'])).float()
+        all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
         class_weights = torch.from_numpy(
-            compute_class_weight(None, classes=np.unique(train_labels + 1), y=train_labels + 1)).float()
+            compute_class_weight(None, classes=np.unique(train_labels + 1), y=train_labels + 1)
+        ).float()
         for i, lbl in enumerate(np.unique(train_labels)):
             all_class_weights[int(lbl)] = class_weights[i]
-        if config['loss'] == 'cross_entropy':
-            if config.get("gpu", "cpu") != "cpu" and torch.cuda.is_available():
-                loss.weight = all_class_weights.cuda()
-            else:
-                loss.weight = all_class_weights
+        if config["loss"] == "cross_entropy":
+            loss.weight = all_class_weights.to(device)
 
     # initialize optimizer and loss
     opt, criterion = optimizer, loss
 
-    if config['loss'] == 'maxup':
+    if config["loss"] == "maxup":
         maxup = Maxup(my_noise_addition_augmenter, ntrials=4)
 
-    # initialize training and validation dataset, define DataLoaders
-    dataset = torch.utils.data.TensorDataset(torch.from_numpy(train_features), torch.from_numpy(train_labels))
+    # DataLoaders
+    train_ds = torch.utils.data.TensorDataset(
+        torch.from_numpy(train_features), torch.from_numpy(train_labels)
+    )
+    val_ds = torch.utils.data.TensorDataset(
+        torch.from_numpy(val_features), torch.from_numpy(val_labels)
+    )
 
     g = torch.Generator()
-    g.manual_seed(config['seed'])
+    g.manual_seed(config["seed"])
 
-    trainloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=config['shuffling'],
-                             worker_init_fn=seed_worker, generator=g, pin_memory=True)
-    dataset = torch.utils.data.TensorDataset(torch.from_numpy(val_features), torch.from_numpy(val_labels))
-    valloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=False,
-                           worker_init_fn=seed_worker, generator=g, pin_memory=True)
+    use_pin = (device.type == "cuda") and torch.cuda.is_available()
+
+    trainloader = DataLoader(
+        train_ds,
+        batch_size=config["batch_size"],
+        shuffle=config["shuffling"],
+        worker_init_fn=seed_worker,
+        generator=g,
+        pin_memory=use_pin,
+    )
+    valloader = DataLoader(
+        val_ds,
+        batch_size=config["batch_size"],
+        shuffle=False,
+        worker_init_fn=seed_worker,
+        generator=g,
+        pin_memory=use_pin,
+    )
 
     # counters and objects used for early stopping and learning rate adjustment
     best_metric = 0.0
-    best_network = None
     best_val_preds = None
     best_train_preds = None
     early_stop = False
     es_pt_counter = 0
-    labels = list(range(0, config['nb_classes']))
+    labels = list(range(0, config["nb_classes"]))
+
+    # store best checkpoint (so "best" truly returns best weights)
+    best_checkpoint = None
+
+    # choose default name for logging namespace
+    if name is None:
+        name = "train"
 
     # training loop; iterates through epochs
-    for e in range(config['epochs']):
+    for e in range(config["epochs"]):
         """
         TRAINING
         """
-        # helper objects
-        train_preds = []
-        train_gt = []
+        train_preds_parts = []
+        train_gt_parts = []
         train_losses = []
+
         start_time = time.time()
         batch_num = 1
 
-        # iterate over train dataset
         for i, (x, y) in enumerate(trainloader):
-            # send x and y to GPU
-            inputs, targets = x.to(config['gpu']), y.to(config['gpu'])
-            # zero accumulated gradients
+            inputs, targets = x.to(device), y.to(device)
+
             opt.zero_grad()
 
-            if config['loss'] == 'maxup':
-                # Increase the inputs via data augmentation
+            if config["loss"] == "maxup":
                 inputs, targets = maxup(inputs, targets)
 
-            # send inputs through network to get predictions, calculate loss and backpropagate
             train_output = network(inputs)
 
-            if config['loss'] == 'maxup':
-                # calculates loss
+            if config["loss"] == "maxup":
                 train_loss = maxup.maxup_loss(train_output, targets.long())[0]
             else:
                 train_loss = criterion(train_output, targets.long())
 
             train_loss.backward()
             opt.step()
-            # append train loss to list
-            train_losses.append(train_loss.item())
 
-            # create predictions and append them to final list
-            y_preds = np.argmax(train_output.cpu().detach().numpy(), axis=-1)
-            y_true = targets.cpu().numpy().flatten()
-            train_preds = np.concatenate((np.array(train_preds, int), np.array(y_preds, int)))
-            train_gt = np.concatenate((np.array(train_gt, int), np.array(y_true, int)))
+            train_losses.append(float(train_loss.item()))
 
-            # if verbose print out batch wise results (batch number, loss and time)
-            if config['verbose']:
-                if batch_num % config['print_freq'] == 0 and batch_num > 0:
-                    cur_loss = np.mean(train_losses)
+            # predictions / gt (collect then concat once)
+            y_preds = np.argmax(train_output.detach().cpu().numpy(), axis=-1)
+            y_true = targets.detach().cpu().numpy().flatten()
+            train_preds_parts.append(y_preds.astype(int))
+            train_gt_parts.append(y_true.astype(int))
+
+            if config["verbose"]:
+                if batch_num % config["print_freq"] == 0 and batch_num > 0:
+                    cur_loss = float(np.mean(train_losses))
                     elapsed = time.time() - start_time
-                    print('| epoch {:3d} | {:5d} batches | ms/batch {:5.2f} | '
-                          'train loss {:5.2f}'.format(e, batch_num, elapsed * 1000 / config['batch_size'], cur_loss))
+                    print(
+                        "| epoch {:3d} | {:5d} batches | ms/batch {:5.2f} | train loss {:5.2f}".format(
+                            e, batch_num, elapsed * 1000 / config["batch_size"], cur_loss
+                        )
+                    )
                     start_time = time.time()
                 batch_num += 1
+
+        train_preds = np.concatenate(train_preds_parts) if train_preds_parts else np.array([], dtype=int)
+        train_gt = np.concatenate(train_gt_parts) if train_gt_parts else np.array([], dtype=int)
 
         """
         VALIDATION
         """
-
-        # helper objects
-        val_preds = []
-        val_gt = []
+        val_preds_parts = []
+        val_gt_parts = []
         val_losses = []
 
-        # set network to eval mode
         network.eval()
         with torch.no_grad():
-            # iterate over validation dataset
             for i, (x, y) in enumerate(valloader):
-                # send x and y to GPU
-                inputs, targets = x.to(config['gpu']), y.to(config['gpu'])
+                inputs, targets = x.to(device), y.to(device)
 
-                if config['loss'] == 'maxup':
-                    # Increase the inputs via data augmentation
+                if config["loss"] == "maxup":
                     inputs, targets = maxup(inputs, targets)
 
-                # send inputs through network to get predictions, loss and calculate softmax probabilities
                 val_output = network(inputs)
-                if config['loss'] == 'maxup':
-                    # calculates loss
+
+                if config["loss"] == "maxup":
                     val_loss = maxup.maxup_loss(val_output, targets.long())[0]
                 else:
                     val_loss = criterion(val_output, targets.long())
 
                 val_output = torch.nn.functional.softmax(val_output, dim=1)
 
-                # append validation loss to list
-                val_losses.append(val_loss.item())
+                val_losses.append(float(val_loss.item()))
 
-                # create predictions and append them to final list
-                y_preds = np.argmax(val_output.cpu().numpy(), axis=-1)
-                y_true = targets.cpu().numpy().flatten()
-                val_preds = np.concatenate((np.array(val_preds, int), np.array(y_preds, int)))
-                val_gt = np.concatenate((np.array(val_gt, int), np.array(y_true, int)))
+                y_preds = np.argmax(val_output.detach().cpu().numpy(), axis=-1)
+                y_true = targets.detach().cpu().numpy().flatten()
+                val_preds_parts.append(y_preds.astype(int))
+                val_gt_parts.append(y_true.astype(int))
 
-            # fill values for normal evaluation
-            t_conf_mat = confusion_matrix(train_gt, train_preds, normalize='true', labels=labels)
-            t_acc = t_conf_mat.diagonal() / t_conf_mat.sum(axis=1)
-            t_prec = precision_score(train_gt, train_preds, average=None, zero_division=1, labels=labels)
-            t_rec = recall_score(train_gt, train_preds, average=None, zero_division=1, labels=labels)
-            t_f1 = f1_score(train_gt, train_preds, average=None, zero_division=1, labels=labels)
-            
-            v_conf_mat = confusion_matrix(val_gt, val_preds, normalize='true', labels=labels)
-            v_acc = v_conf_mat.diagonal() / v_conf_mat.sum(axis=1)
-            v_prec = precision_score(val_gt, val_preds, average=None, zero_division=1, labels=labels)
-            v_rec = recall_score(val_gt, val_preds, average=None, zero_division=1, labels=labels)
-            v_f1 = f1_score(val_gt, val_preds, average=None, zero_division=1, labels=labels)
-            
-            # print epoch evaluation results for train and validation dataset
-            print("EPOCH: {}/{}".format(e + 1, config['epochs']),
-                  "\nTrain Loss: {:.4f}".format(np.mean(train_losses)),
-                  "Train Acc (M): {:>4.2f} (%)".format(np.nanmean(t_acc) * 100),
-                  "Train Prc (M): {:>4.2f} (%)".format(np.nanmean(t_prec) * 100),
-                  "Train Rcl (M): {:>4.2f} (%)".format(np.nanmean(t_rec) * 100),
-                  "Train F1 (M): {:>4.2f} (%)".format(np.nanmean(t_f1) * 100),
-                  "\nValid Loss: {:.4f}".format(np.mean(val_losses)),
-                  "Valid Acc (M): {:>4.2f} (%)".format(np.nanmean(v_acc) * 100),
-                  "Valid Prc (M): {:>4.2f} (%)".format(np.nanmean(v_prec) * 100),
-                  "Valid Rcl (M): {:>4.2f} (%)".format(np.nanmean(v_rec) * 100),
-                  "Valid F1 (M): {:>4.2f} (%)".format(np.nanmean(v_f1) * 100)
-                  )
+        val_preds = np.concatenate(val_preds_parts) if val_preds_parts else np.array([], dtype=int)
+        val_gt = np.concatenate(val_gt_parts) if val_gt_parts else np.array([], dtype=int)
+
+        # evaluation metrics
+        t_conf_mat = confusion_matrix(train_gt, train_preds, normalize="true", labels=labels)
+        t_acc = t_conf_mat.diagonal() / t_conf_mat.sum(axis=1)
+        t_prec = precision_score(train_gt, train_preds, average=None, zero_division=1, labels=labels)
+        t_rec = recall_score(train_gt, train_preds, average=None, zero_division=1, labels=labels)
+        t_f1 = f1_score(train_gt, train_preds, average=None, zero_division=1, labels=labels)
+
+        v_conf_mat = confusion_matrix(val_gt, val_preds, normalize="true", labels=labels)
+        v_acc = v_conf_mat.diagonal() / v_conf_mat.sum(axis=1)
+        v_prec = precision_score(val_gt, val_preds, average=None, zero_division=1, labels=labels)
+        v_rec = recall_score(val_gt, val_preds, average=None, zero_division=1, labels=labels)
+        v_f1 = f1_score(val_gt, val_preds, average=None, zero_division=1, labels=labels)
+
+        # print epoch evaluation results
+        print(
+            "EPOCH: {}/{}".format(e + 1, config["epochs"]),
+            "\nTrain Loss: {:.4f}".format(np.mean(train_losses)),
+            "Train Acc (M): {:>4.2f} (%)".format(np.nanmean(t_acc) * 100),
+            "Train Prc (M): {:>4.2f} (%)".format(np.nanmean(t_prec) * 100),
+            "Train Rcl (M): {:>4.2f} (%)".format(np.nanmean(t_rec) * 100),
+            "Train F1 (M): {:>4.2f} (%)".format(np.nanmean(t_f1) * 100),
+            "\nValid Loss: {:.4f}".format(np.mean(val_losses)),
+            "Valid Acc (M): {:>4.2f} (%)".format(np.nanmean(v_acc) * 100),
+            "Valid Prc (M): {:>4.2f} (%)".format(np.nanmean(v_prec) * 100),
+            "Valid Rcl (M): {:>4.2f} (%)".format(np.nanmean(v_rec) * 100),
+            "Valid F1 (M): {:>4.2f} (%)".format(np.nanmean(v_f1) * 100),
+        )
+
+        # W&B logging (current behavior: per-epoch)
+        if run is not None:
+            import wandb
+
+            wandb.log(
+                {
+                    f"{name}/train_loss": float(np.mean(train_losses)),
+                    f"{name}/val_loss": float(np.mean(val_losses)),
+                    f"{name}/val/acc_macro": float(np.nanmean(v_acc)),
+                    f"{name}/val/prec_macro": float(np.nanmean(v_prec)),
+                    f"{name}/val/rec_macro": float(np.nanmean(v_rec)),
+                    f"{name}/val/f1_macro": float(np.nanmean(v_f1)),
+                    f"{name}/lr": float(opt.param_groups[0]["lr"]),
+                })
 
         # adjust learning rate if enabled
-        if config['adj_lr']:
-            if config['lr_scheduler'] == 'reduce_lr_on_plateau':
+        if config["adj_lr"]:
+            if config["lr_scheduler"] == "reduce_lr_on_plateau":
                 lr_scheduler.step(np.mean(val_losses))
             else:
                 lr_scheduler.step()
 
-        # employ early stopping if employed
-        metric = f1_score(val_gt, val_preds, average='macro', labels=labels)
+        # employ early stopping if employed (based on macro F1)
+        metric = f1_score(val_gt, val_preds, average="macro", labels=labels)
+
         if best_metric >= metric:
-            if config['early_stopping']:
+            if config["early_stopping"]:
                 es_pt_counter += 1
-                # early stopping check
-                if es_pt_counter >= config['es_patience']:
-                    print('Stopping training early since no loss improvement over {} epochs.'
-                          .format(str(es_pt_counter)))
+                if es_pt_counter >= config["es_patience"]:
+                    print(
+                        "Stopping training early since no loss improvement over {} epochs.".format(
+                            str(es_pt_counter)
+                        )
+                    )
                     early_stop = True
         else:
             print(f"Performance improved... ({best_metric}->{metric})")
-            if config['early_stopping']:
+            if config["early_stopping"]:
                 es_pt_counter = 0
-            best_metric = metric
-            best_network = network
-            checkpoint = {
-                "model_state_dict": network.state_dict(),
-                "optim_state_dict": optimizer.state_dict(),
-                "criterion_state_dict": criterion.state_dict(),
+
+            best_metric = float(metric)
+            best_checkpoint = {
+                "model_state_dict": {k: v.detach().cpu().clone() for k, v in network.state_dict().items()},
+                "optim_state_dict": opt.state_dict(),
+                "criterion_state_dict": criterion.state_dict() if hasattr(criterion, "state_dict") else {},
                 "random_rnd_state": random.getstate(),
                 "numpy_rnd_state": np.random.get_state(),
                 "torch_rnd_state": torch.get_rng_state(),
@@ -472,24 +529,40 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
             best_train_preds = train_preds
             best_val_preds = val_preds
 
-        # set network to train mode again
         network.train()
-        
-        if run is not None:
-            run[name].append({"train_loss": np.mean(train_losses), "val_loss": np.mean(val_losses), "accuracy": np.nanmean(v_acc), "precision": np.nanmean(v_prec), "recall": np.nanmean(v_rec), 'f1': np.nanmean(v_f1)}, step=e)
 
         if early_stop:
             break
 
     # return validation, train and test predictions as numpy array with ground truth
-    if config['valid_epoch'] == 'best':
-        return best_network, checkpoint, np.vstack((best_val_preds, val_gt)).T, \
-               np.vstack((best_train_preds, train_gt)).T
+    if config["valid_epoch"] == "best":
+        if best_checkpoint is None:
+            # fallback: behave like "last"
+            checkpoint = {
+                "model_state_dict": network.state_dict(),
+                "optim_state_dict": opt.state_dict(),
+                "criterion_state_dict": criterion.state_dict() if hasattr(criterion, "state_dict") else {},
+                "random_rnd_state": random.getstate(),
+                "numpy_rnd_state": np.random.get_state(),
+                "torch_rnd_state": torch.get_rng_state(),
+            }
+            return network, checkpoint, np.vstack((val_preds, val_gt)).T, np.vstack((train_preds, train_gt)).T
+
+        # restore best weights into the existing network object
+        network.load_state_dict(best_checkpoint["model_state_dict"])
+        network.to(device)
+
+        return (
+            network,
+            best_checkpoint,
+            np.vstack((best_val_preds, val_gt)).T,
+            np.vstack((best_train_preds, train_gt)).T,
+        )
     else:
         checkpoint = {
             "model_state_dict": network.state_dict(),
-            "optim_state_dict": optimizer.state_dict(),
-            "criterion_state_dict": criterion.state_dict(),
+            "optim_state_dict": opt.state_dict(),
+            "criterion_state_dict": criterion.state_dict() if hasattr(criterion, "state_dict") else {},
             "random_rnd_state": random.getstate(),
             "numpy_rnd_state": np.random.get_state(),
             "torch_rnd_state": torch.get_rng_state(),

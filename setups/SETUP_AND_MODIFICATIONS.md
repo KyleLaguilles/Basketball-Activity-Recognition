@@ -59,3 +59,26 @@
   - python main.py --gpu cpu --epochs 1 --batch_size 64
     - example parameters; just wanted to get it to run without  much downtime
 - also added the raw and preprocessed CSV files to .gitignore so that large files wouldn't be pushed
+
+## 5. W & B Migration Notes
+- removed Neptune dependency
+  - removed all Neptune-specific logging
+  - replaced with Weights & Biases (wandb)
+- running with W & B logging enabled:
+  - python main.py --gpu cpu --epochs 1 --batch_size 64 --wandb
+  - must login once per environment:
+    - wandb login
+- during LOSO cross-validation:
+  - originally used wandb.log(..., step=e)
+  - caused warning: Tried to log to step 0 that is less than the current step...
+  - epoch counter resets per subject; W & B requires montonically increasing steps without a run
+  - Fix: removed explicit step=e; W & B auto-increments step internally
+- replaced Neptune-style logging with: wandb.log({...})
+  - fixed best-model handling:
+    - best epoch checkpoint is now properly stored & restored
+    - improved prediction accumulation
+      - avoid repeated np.concatenate
+    - conditional pin_memory depending on CUDA availability
+- removed leftover File(...) Neptune artifact usage
+  - replaced confusion matrix uploads with:
+    - wandb.Image(...)
