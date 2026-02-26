@@ -63,9 +63,8 @@ def create_hangtime_data(raw_dir, save_dir):
         print('\nLOCOMOTION: \n')
         print(sbj_data['locomotion'].value_counts())
 
-        for i, row in sbj_data.iterrows():
-            if row['basketball'] == 'not_labeled':
-                sbj_data.iloc[i, -3] = row['locomotion']
+        mask = sbj_data["basketball"].eq("not_labeled")
+        sbj_data.loc[mask, "basketball"] = sbj_data.loc[mask, "locomotion"]
 
         sbj_data = sbj_data[(sbj_data['basketball'] != 'not_labeled') & (sbj_data['basketball'] != 'jumping')]
         sbj_data = sbj_data.drop(['locomotion'], axis=1)

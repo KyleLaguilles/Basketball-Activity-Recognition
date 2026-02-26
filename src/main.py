@@ -148,7 +148,8 @@ def main(args):
         run = None
 
     ts = datetime.datetime.fromtimestamp(int(time.time()))
-    log_dir = os.path.join('logs', args.test_type, args.test_case, args.network, str(ts))
+    safe_ts = ts.strftime("%Y-%m-%d_%H-%M-%S")
+    log_dir = os.path.join('logs', args.test_type, args.test_case, args.network, str(safe_ts))
     os.makedirs(log_dir, exist_ok=True)
     sys.stdout = Logger(os.path.join(log_dir, 'log.txt'))
 
