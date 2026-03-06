@@ -349,6 +349,7 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
 
     # counters and objects used for early stopping and learning rate adjustment
     best_metric = 0.0
+    best_epoch = 1
     best_val_preds = None
     best_train_preds = None
     early_stop = False
@@ -518,6 +519,7 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
                 es_pt_counter = 0
 
             best_metric = float(metric)
+            best_epoch = e + 1  # epochs are 1-indexed for readability
             best_checkpoint = {
                 "model_state_dict": {k: v.detach().cpu().clone() for k, v in network.state_dict().items()},
                 "optim_state_dict": opt.state_dict(),
@@ -546,7 +548,7 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
                 "numpy_rnd_state": np.random.get_state(),
                 "torch_rnd_state": torch.get_rng_state(),
             }
-            return network, checkpoint, np.vstack((val_preds, val_gt)).T, np.vstack((train_preds, train_gt)).T
+            return network, checkpoint, np.vstack((val_preds, val_gt)).T, np.vstack((train_preds, train_gt)).T, best_epoch
 
         # restore best weights into the existing network object
         network.load_state_dict(best_checkpoint["model_state_dict"])
@@ -557,6 +559,7 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
             best_checkpoint,
             np.vstack((best_val_preds, val_gt)).T,
             np.vstack((best_train_preds, train_gt)).T,
+            best_epoch,
         )
     else:
         checkpoint = {
@@ -567,4 +570,4 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
             "numpy_rnd_state": np.random.get_state(),
             "torch_rnd_state": torch.get_rng_state(),
         }
-        return network, checkpoint, np.vstack((val_preds, val_gt)).T, np.vstack((train_preds, train_gt)).T
+        return network, checkpoint, np.vstack((val_preds, val_gt)).T, np.vstack((train_preds, train_gt)).T, best_epoch

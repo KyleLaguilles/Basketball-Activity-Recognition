@@ -20,6 +20,43 @@ from model.DeepConvLSTM import DeepConvLSTM
 from model.train import train, init_optimizer, init_loss, init_scheduler
 import wandb
 
+
+def save_composite_confusion_matrix(v_conf_mat, class_names, log_dir, run=None, title='Confusion Matrix (All Subjects)'):
+    """
+    Save a styled composite confusion matrix heatmap similar to the paper's Figure 12.
+    Uses seaborn for better color styling.
+    """
+    import seaborn as sns
+
+    fig, ax = plt.subplots(figsize=(12, 10))
+    sns.heatmap(
+        v_conf_mat,
+        annot=True,
+        fmt='.2f',
+        cmap='Blues',
+        xticklabels=class_names,
+        yticklabels=class_names,
+        vmin=0, vmax=1,
+        ax=ax,
+        linewidths=0.5
+    )
+    ax.set_title(title, fontsize=14, pad=12)
+    ax.set_xlabel('Predicted Label', fontsize=12)
+    ax.set_ylabel('True Label', fontsize=12)
+    ax.tick_params(axis='x', rotation=45)
+    ax.tick_params(axis='y', rotation=0)
+    plt.tight_layout()
+
+    mkdir_if_missing(os.path.join(log_dir, 'conf_mats'))
+    save_path = os.path.join(log_dir, 'conf_mats', 'all_composite.png')
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    if run is not None:
+        wandb.log({'conf_matrices/composite': wandb.Image(save_path)})
+
+    return save_path
+
 def cross_participant_cv(data, args, log_dir=None, run=None):
     """
     Method to apply cross-participant cross-validation (also known as leave-one-subject-out cross-validation).
@@ -39,6 +76,9 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
     all_train_output = None
     all_val_output = None
     orig_lr = args.learning_rate
+
+    # per-subject best epoch and F1 tracking
+    subject_best_records = []
 
     for i, sbj in enumerate(np.unique(data[:, 0])):
         print('\n VALIDATING FOR SUBJECT {0}; {1} OF {2}'.format(args.subjects[int(sbj)], int(sbj) + 1, int(len(np.unique(data[:, 0])))))
@@ -87,7 +127,7 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         else:
             scheduler = None
 
-        net, checkpoint, val_output, train_output = train(X_train, y_train, X_val, y_val,
+        net, checkpoint, val_output, train_output, best_epoch = train(X_train, y_train, X_val, y_val,
                                                           network=net, optimizer=opt, loss=loss, lr_scheduler=scheduler,
                                                           config=vars(args), run=run, name='sbj_' + str(int(sbj))
                                                           )
@@ -133,6 +173,13 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         cp_scores[1, :, int(sbj)] = v_prec
         cp_scores[2, :, int(sbj)] = v_rec
         cp_scores[3, :, int(sbj)] = v_f1
+
+        # record best epoch and macro F1 for this subject
+        subject_best_records.append({
+            'subject': args.subjects[int(sbj)],
+            'best_epoch': best_epoch,
+            'best_macro_f1': float(np.nanmean(v_f1))
+        })
 
         # fill values for train val gap evaluation
         train_val_gap[0, int(sbj)] = np.nanmean(t_acc) - np.nanmean(v_acc)
@@ -222,30 +269,26 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
     print("Train-Val-Recall Difference: {0}".format(np.nanmean(t_rec) - np.nanmean(v_rec)))
     print("Train-Val-F1 Difference: {0}".format(np.nanmean(t_f1) - np.nanmean(v_f1)))
 
-    # save final postprocessed confusion matrix
-    _, ax = plt.subplots(figsize=(15, 15), layout="constrained")
-    ax.set_title('Confusion Matrix Total')
-    conf_disp = ConfusionMatrixDisplay(confusion_matrix=v_conf_mat, display_labels=args.class_names)    
-    conf_disp.plot(ax=ax, xticks_rotation='vertical', colorbar=False)
-    mkdir_if_missing(os.path.join(log_dir, 'conf_mats'))
-    plt.savefig(os.path.join(log_dir, 'conf_mats', 'all.png'))
-    if run is not None:
-        all_path = os.path.join(log_dir, "conf_mats", "all.png")
-        wandb.log({"conf_matrices/all": wandb.Image(all_path)})
-    
-    # submit final values to wandb 
-    if run is not None:
-        run.summary["final_accuracy"] = float(np.nanmean(v_acc))
-        run.summary["final_precision"] = float(np.nanmean(v_prec))
-        run.summary["final_recall"] = float(np.nanmean(v_rec))
-        run.summary["final_f1"] = float(np.nanmean(v_f1))
+    # print per-subject best epoch and F1 summary
+    print('\nPER-SUBJECT BEST EPOCH & F1 SUMMARY')
+    print('-------------------------------------')
+    print('{:<20} {:>12} {:>12}'.format('Subject', 'Best Epoch', 'Best F1 (%)'))
+    for record in subject_best_records:
+        print('{:<20} {:>12} {:>12.2f}'.format(
+            str(record['subject']), record['best_epoch'], record['best_macro_f1'] * 100))
 
-        run.summary["train-val-acc-diff"] = float(np.nanmean(t_acc) - np.nanmean(v_acc))
-        run.summary["train-val-prec-diff"] = float(np.nanmean(t_prec) - np.nanmean(v_prec))
-        run.summary["train-val-rec-diff"] = float(np.nanmean(t_rec) - np.nanmean(v_rec))
-        run.summary["train-val-f1-diff"] = float(np.nanmean(t_f1) - np.nanmean(v_f1))
-    
-    return net
+    # save per-subject summary to CSV
+    summary_df = pd.DataFrame(subject_best_records)
+    summary_path = os.path.join(log_dir, 'subject_best_summary.csv')
+    summary_df.to_csv(summary_path, index=False)
+    print('\nSaved per-subject summary to: {}'.format(summary_path))
+    if run is not None:
+        wandb.save(summary_path, policy='now')
+        wandb.log({'per_subject_summary': wandb.Table(dataframe=summary_df)})
+
+    # save final composite confusion matrix (styled)
+    save_composite_confusion_matrix(v_conf_mat, args.class_names, log_dir, run,
+                                    title='Composite Confusion Matrix (All Subjects)')
 
 
 def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
@@ -305,7 +348,7 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
     else:
         scheduler = None
 
-    net, checkpoint, val_output, train_output = train(X_train, y_train, X_val, y_val,
+    net, checkpoint, val_output, train_output, best_epoch = train(X_train, y_train, X_val, y_val,
                                                       network=net, optimizer=opt, loss=loss, lr_scheduler=scheduler,
                                                       config=vars(args), run=run, name='split'
                                                       )

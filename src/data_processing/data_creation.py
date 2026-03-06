@@ -54,7 +54,7 @@ def create_hangtime_data(raw_dir, save_dir):
                             'acc_x', 'acc_y', 'acc_z',
                             'basketball', 'locomotion', 'coarse']]
 
-        sbj_data['subject'] = sbj_id
+        sbj_data['subject'] = str(sbj_id)
         sbj_all = sbj_data
         
         print('LABEL DISTRIBUTION ({})'.format(sbj_name))

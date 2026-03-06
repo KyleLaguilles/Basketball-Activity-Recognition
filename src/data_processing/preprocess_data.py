@@ -32,9 +32,9 @@ def load_dataset(test_type, test_case, include_void=False):
     has_void = True
     class_names = ['dribbling', 'shot', 'pass', 'rebound', 'layup', 'walking', 'running', 'standing', 'sitting']
 
-    data_drill = pd.read_csv(os.path.join('data/', 'hangtime_drill_data.csv'), sep=',', header=None, index_col=None)
-    data_warmup = pd.read_csv(os.path.join('data/', 'hangtime_warmup_data.csv'), sep=',', header=None, index_col=None)
-    data_game = pd.read_csv(os.path.join('data/', 'hangtime_game_data.csv'), sep=',', header=None, index_col=None)
+    data_drill = pd.read_csv(os.path.join('data/', 'hangtime_drill_data.csv'), sep=',', header=None, index_col=None, dtype={3: str})
+    data_warmup = pd.read_csv(os.path.join('data/', 'hangtime_warmup_data.csv'), sep=',', header=None, index_col=None, dtype={3: str})
+    data_game = pd.read_csv(os.path.join('data/', 'hangtime_game_data.csv'), sep=',', header=None, index_col=None, dtype={3: str})
     data = pd.concat((data_drill, data_warmup, data_game), axis=0)
     data_dandw = pd.concat((data_drill, data_warmup), axis=0)
 
