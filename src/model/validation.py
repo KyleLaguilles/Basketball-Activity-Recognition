@@ -286,7 +286,7 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         wandb.save(summary_path, policy='now')
         wandb.log({'per_subject_summary': wandb.Table(dataframe=summary_df)})
 
-    # save final composite confusion matrix (styled)
+    # save final composite confusion matrix
     save_composite_confusion_matrix(v_conf_mat, args.class_names, log_dir, run,
                                     title='Composite Confusion Matrix (All Subjects)')
 

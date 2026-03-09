@@ -25,7 +25,6 @@ from misc.torchutils import count_parameters, seed_worker
 from model.DeepConvLSTM import ConvBlock, ConvBlockSkip, ConvBlockFixup
 import wandb
 
-
 def init_weights(network):
     """
     Weight initialization of network (initialises all LSTM, Conv2D and Linear layers according to weight_init parameter
@@ -228,20 +227,6 @@ def init_scheduler(optimizer, config):
 
 def train(train_features, train_labels, val_features, val_labels, network, optimizer, loss, config, name=None, run=None, lr_scheduler=None,
 ):
-    """
-    Patched version of the original training loop with the same behavior:
-    - per-epoch metrics printed + (optional) logged to W&B
-    - early stopping unchanged
-    - LR scheduler handling unchanged
-    - returns same objects/shapes as before
-
-    Fixes:
-    - W&B logging uses wandb.log instead of run[name].append
-    - "best model" really corresponds to best epoch (reload best checkpoint at end)
-    - avoids O(n^2) np.concatenate inside the batch loop
-    - pin_memory is enabled only when using CUDA
-    """
-
     """
     Method to train a PyTorch network.
 
@@ -480,8 +465,6 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
 
         # W&B logging (current behavior: per-epoch)
         if run is not None:
-            import wandb
-
             wandb.log(
                 {
                     f"{name}/train_loss": float(np.mean(train_losses)),
