@@ -8,7 +8,6 @@
 
 from torch import nn
 
-
 class ShallowDeepConvLSTM(nn.Module):
     """
     ShallowDeepConvLSTM model as described in "Improving Deep Learning for HAR with Shallow LSTMs" (https://doi.org/10.1145/3460421.3480419).

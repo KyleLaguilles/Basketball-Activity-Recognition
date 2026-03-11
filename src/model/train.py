@@ -25,94 +25,115 @@ from misc.torchutils import count_parameters, seed_worker
 from model.DeepConvLSTM import ConvBlock, ConvBlockSkip, ConvBlockFixup
 import wandb
 
-def init_weights(network):
+def init_weights(network, weight_init):
     """
     Weight initialization of network (initialises all LSTM, Conv2D and Linear layers according to weight_init parameter
     of network.
 
-    :param network: pytorch model
-        Network of which weights are to be initialised
-    :return: pytorch model
-        Network with initialised weights
+    Args:
+        network: torch.nn.Module
+            The network to initialize.
+        weight_init: str
+            The weight initialization method. Options are 'normal', 'orthogonal', 'xavier_uniform', 'xavier_normal',
+            'kaiming_uniform', 'kaiming_normal'.
+            
+    Returns:
+        network: torch.nn.Module
+            The initialized network.
     """
     for m in network.modules():
-        # normal convblock and skip convblock initialisation
-        if isinstance(m, (ConvBlock, ConvBlockSkip)):
-            if network.weights_init == 'normal':
-                torch.nn.init.normal_(m.conv1.weight)
-                torch.nn.init.normal_(m.conv2.weight)
-            elif network.weights_init == 'orthogonal':
-                torch.nn.init.orthogonal_(m.conv1.weight)
-                torch.nn.init.orthogonal_(m.conv2.weight)
-            elif network.weights_init == 'xavier_uniform':
-                torch.nn.init.xavier_uniform_(m.conv1.weight)
-                torch.nn.init.xavier_uniform_(m.conv2.weight)
-            elif network.weights_init == 'xavier_normal':
-                torch.nn.init.xavier_normal_(m.conv1.weight)
-                torch.nn.init.xavier_normal_(m.conv2.weight)
-            elif network.weights_init == 'kaiming_uniform':
-                torch.nn.init.kaiming_uniform_(m.conv1.weight)
-                torch.nn.init.kaiming_uniform_(m.conv2.weight)
-            elif network.weights_init == 'kaiming_normal':
-                torch.nn.init.kaiming_normal_(m.conv1.weight)
-                torch.nn.init.kaiming_normal_(m.conv2.weight)
-            m.conv1.bias.data.fill_(0.0)
-            m.conv2.bias.data.fill_(0.0)
-        # fixup block initialisation (see fixup paper for details)
-        elif isinstance(m, ConvBlockFixup):
-            nn.init.normal_(m.conv1.weight, mean=0, std=np.sqrt(
-                2 / (m.conv1.weight.shape[0] * np.prod(m.conv1.weight.shape[2:]))) * network.nb_conv_blocks ** (-0.5))
-            nn.init.constant_(m.conv2.weight, 0)
+        # conv initialisation
+        if isinstance(m, nn.Conv2d):
+            if weight_init == 'normal':
+                nn.init.normal_(m.weight)
+            elif weight_init == 'orthogonal':
+                nn.init.orthogonal_(m.weight)
+            elif weight_init == 'xavier_uniform':
+                nn.init.xavier_uniform_(m.weight)
+            elif weight_init == 'xavier_normal':
+                nn.init.xavier_normal_(m.weight)
+            elif weight_init == 'kaiming_uniform':
+                nn.init.kaiming_uniform_(m.weight)
+            elif weight_init == 'kaiming_normal':
+                nn.init.kaiming_normal_(m.weight)
+            if torch.is_tensor(m.bias):                
+                m.bias.data.fill_(0.0)
         # linear layers
         elif isinstance(m, nn.Linear):
-            if network.use_fixup:
-                nn.init.constant_(m.weight, 0)
-            elif network.weights_init == 'normal':
-                torch.nn.init.normal_(m.weight)
-            elif network.weights_init == 'orthogonal':
-                torch.nn.init.orthogonal_(m.weight)
-            elif network.weights_init == 'xavier_uniform':
-                torch.nn.init.xavier_uniform_(m.weight)
-            elif network.weights_init == 'xavier_normal':
-                torch.nn.init.xavier_normal_(m.weight)
-            elif network.weights_init == 'kaiming_uniform':
-                torch.nn.init.kaiming_uniform_(m.weight)
-            elif network.weights_init == 'kaiming_normal':
-                torch.nn.init.kaiming_normal_(m.weight)
-            nn.init.constant_(m.bias, 0)
+            if weight_init == 'normal':
+                nn.init.normal_(m.weight)
+            elif weight_init == 'orthogonal':
+                nn.init.orthogonal_(m.weight)
+            elif weight_init == 'xavier_uniform':
+                nn.init.xavier_uniform_(m.weight)
+            elif weight_init == 'xavier_normal':
+                nn.init.xavier_normal_(m.weight)
+            elif weight_init == 'kaiming_uniform':
+                nn.init.kaiming_uniform_(m.weight)
+            elif weight_init == 'kaiming_normal':
+                nn.init.kaiming_normal_(m.weight)
+            if torch.is_tensor(m.bias):                
+                nn.init.constant_(m.bias, 0)
         # LSTM initialisation
-        elif isinstance(m, nn.LSTM):
+        elif isinstance(m, nn.LSTM) or isinstance(m, nn.GRU):
             for name, param in m.named_parameters():
-                if 'weight_ih' in name:
-                    if network.weights_init == 'normal':
+                if 'weight_ih' in name or 'weight_hh' in name:
+                    if weight_init == 'normal':
                         torch.nn.init.normal_(param.data)
-                    elif network.weights_init == 'orthogonal':
+                    elif weight_init == 'orthogonal':
                         torch.nn.init.orthogonal_(param.data)
-                    elif network.weights_init == 'xavier_uniform':
+                    elif weight_init == 'xavier_uniform':
                         torch.nn.init.xavier_uniform_(param.data)
-                    elif network.weights_init == 'xavier_normal':
+                    elif weight_init == 'xavier_normal':
                         torch.nn.init.xavier_normal_(param.data)
-                    elif network.weights_init == 'kaiming_uniform':
+                    elif weight_init == 'kaiming_uniform':
                         torch.nn.init.kaiming_uniform_(param.data)
-                    elif network.weights_init == 'kaiming_normal':
+                    elif weight_init == 'kaiming_normal':
                         torch.nn.init.kaiming_normal_(param.data)
-                elif 'weight_hh' in name:
-                    if network.weights_init == 'normal':
-                        torch.nn.init.normal_(param.data)
-                    elif network.weights_init == 'orthogonal':
-                        torch.nn.init.orthogonal_(param.data)
-                    elif network.weights_init == 'xavier_uniform':
-                        torch.nn.init.xavier_uniform_(param.data)
-                    elif network.weights_init == 'xavier_normal':
-                        torch.nn.init.xavier_normal_(param.data)
-                    elif network.weights_init == 'kaiming_uniform':
-                        torch.nn.init.kaiming_uniform_(param.data)
-                    elif network.weights_init == 'kaiming_normal':
-                        torch.nn.init.kaiming_normal_(param.data)
-                elif 'bias' in name:
-                    param.data.fill_(0.0)
-    return network
+        elif isinstance(m, nn.LayerNorm):
+            # Typically, the scale (weight) is initialized to 1 and the bias to 0.
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
 
+        # Transformer-related: MultiheadAttention and TransformerEncoderLayer
+        elif isinstance(m, nn.MultiheadAttention):
+            for attr in ['in_proj_weight', 'in_proj_bias', 'out_proj.weight', 'out_proj.bias']:
+                param = m
+                for part in attr.split('.'):
+                    param = getattr(param, part)
+                if 'weight' in attr:
+                    if weight_init == 'normal':
+                        nn.init.normal_(param)
+                    elif weight_init == 'orthogonal':
+                        nn.init.orthogonal_(param)
+                    elif weight_init == 'xavier_uniform':
+                        nn.init.xavier_uniform_(param)
+                    elif weight_init == 'xavier_normal':
+                        nn.init.xavier_normal_(param)
+                    elif weight_init == 'kaiming_uniform':
+                        nn.init.kaiming_uniform_(param)
+                    elif weight_init == 'kaiming_normal':
+                        nn.init.kaiming_normal_(param)
+                else:
+                    nn.init.constant_(param, 0)
+
+        elif isinstance(m, nn.TransformerEncoderLayer):
+            # Applies to self_attn, linear1, linear2
+            init_weights(m.self_attn, weight_init)
+            init_weights(m.linear1, weight_init)
+            init_weights(m.linear2, weight_init)
+            init_weights(m.norm1, weight_init)
+            init_weights(m.norm2, weight_init)
+
+        elif isinstance(m, nn.TransformerDecoderLayer):
+            init_weights(m.self_attn, weight_init)
+            init_weights(m.multihead_attn, weight_init)
+            init_weights(m.linear1, weight_init)
+            init_weights(m.linear2, weight_init)
+            init_weights(m.norm1, weight_init)
+            init_weights(m.norm2, weight_init)
+            init_weights(m.norm3, weight_init)
+    return network
 
 class Maxup(torch.nn.Module):
     """

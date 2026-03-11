@@ -108,7 +108,7 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
 
         # network initialization
         if args.network == 'deepconvlstm':
-            net = DeepConvLSTM(config=vars(args))
+            net = DeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
         elif args.network == 'attendanddiscriminate':        
             net = AttendAndDiscriminate(args.nb_channels, args.nb_classes, args.nb_units_lstm, args.nb_filters, args.filter_width, args.nb_layers_lstm, False, args.drop_prob, 0.5, 0.5, 'ReLU', 1, args.gpu, args.weights_init)
         else:
@@ -329,7 +329,7 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
 
     # network initialization
     if args.network == 'deepconvlstm':
-        net = DeepConvLSTM(config=vars(args))
+        net = DeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
     elif args.network == 'attendanddiscriminate':        
             net = AttendAndDiscriminate(args.nb_channels, args.nb_classes, args.nb_units_lstm, args.nb_filters, args.filter_width, args.nb_layers_lstm, False, args.drop_prob, 0.5, 0.5, 'ReLU', 1, args.gpu)
     else:

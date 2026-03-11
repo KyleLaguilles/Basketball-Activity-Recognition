@@ -39,39 +39,21 @@ INCLUDE_VOID = False
 """
 NETWORK OPTIONS:
 - NETWORK: network architecture to be used (e.g. 'deepconvlstm')
-- LSTM: boolean whether to employ a lstm after convolution layers
 - NB_UNITS_LSTM: number of hidden units in each LSTM layer
 - NB_LAYERS_LSTM: number of layers in LSTM
-- CONV_BLOCK_TYPE: type of convolution blocks employed ('normal', 'skip' or 'fixup')
-- NB_CONV_BLOCKS: number of convolution blocks employed
 - NB_FILTERS: number of convolution filters employed in each layer of convolution blocks
 - FILTER_WIDTH: width of convolution filters (e.g. 11 = 11x1 filter)
-- DILATION: dilation factor employed on convolutions (set 1 for not dilation)
 - DROP_PROB: dropout probability in dropout layers
-- POOLING: boolean whether to employ a pooling layer after convolution layers
-- BATCH_NORM: boolean whether to apply batch normalisation in convolution blocks
-- REDUCE_LAYER: boolean whether to employ a reduce layer after convolution layers
-- POOL_TYPE: type of pooling employed in pooling layer
-- POOL_KERNEL_WIDTH: width of pooling kernel (e.g. 2 = 2x1 pooling kernel)
-- REDUCE_LAYER_OUTPUT: size of the output after the reduce layer (i.e. what reduction is to be applied) 
 """
 
 NETWORK = 'deepconvlstm'
-NO_LSTM = False
 NB_UNITS_LSTM = 128
 NB_LAYERS_LSTM = 1
-CONV_BLOCK_TYPE = 'normal'
-NB_CONV_BLOCKS = 2
 NB_FILTERS = 64
 FILTER_WIDTH = 11
-DILATION = 1
 DROP_PROB = 0.5
-POOLING = False
-BATCH_NORM = False
-REDUCE_LAYER = False
 POOL_TYPE = 'max'
 POOL_KERNEL_WIDTH = 2
-REDUCE_LAYER_OUTPUT = 8
 
 """
 TRAINING OPTIONS:
@@ -207,21 +189,13 @@ if __name__ == '__main__':
 
     # NETWORK OPTIONS
     parser.add_argument('--network', default=NETWORK, type=str)
-    parser.add_argument('--no_lstm', default=NO_LSTM, action='store_true')
     parser.add_argument('--nb_units_lstm', default=NB_UNITS_LSTM, type=int)
     parser.add_argument('--nb_layers_lstm', default=NB_LAYERS_LSTM, type=int)
-    parser.add_argument('--conv_block_type', default=CONV_BLOCK_TYPE, type=str)
-    parser.add_argument('--nb_conv_blocks', default=NB_CONV_BLOCKS, type=int)
     parser.add_argument('--nb_filters', default=NB_FILTERS, type=int)
     parser.add_argument('--filter_width', default=FILTER_WIDTH, type=int)
-    parser.add_argument('--dilation', default=DILATION, type=int)
     parser.add_argument('--drop_prob', default=DROP_PROB, type=float)
-    parser.add_argument('--pooling', default=POOLING, action='store_true')
-    parser.add_argument('--batch_norm', default=BATCH_NORM, action='store_true')
-    parser.add_argument('--reduce_layer', default=REDUCE_LAYER, action='store_true')
     parser.add_argument('--pool_type', default=POOL_TYPE, type=str)
     parser.add_argument('--pool_kernel_width', default=POOL_KERNEL_WIDTH, type=int)
-    parser.add_argument('--reduce_layer_output', default=REDUCE_LAYER_OUTPUT, type=int)
 
     # TRAINING OPTIONS
     parser.add_argument('--seed', default=SEED, type=int)
