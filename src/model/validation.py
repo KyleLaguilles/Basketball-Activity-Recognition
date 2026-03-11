@@ -17,6 +17,7 @@ from data_processing.sliding_window import apply_sliding_window
 from misc.osutils import mkdir_if_missing
 from model.AttendAndDiscriminate import AttendAndDiscriminate
 from model.DeepConvLSTM import DeepConvLSTM
+from model.ShallowDeepConvLSTM import ShallowDeepConvLSTM
 from model.train import train, init_optimizer, init_loss, init_scheduler
 import wandb
 
@@ -111,6 +112,8 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
             net = DeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
         elif args.network == 'attendanddiscriminate':        
             net = AttendAndDiscriminate(args.nb_channels, args.nb_classes, args.nb_units_lstm, args.nb_filters, args.filter_width, args.nb_layers_lstm, False, args.drop_prob, 0.5, 0.5, 'ReLU', 1, args.gpu, args.weights_init)
+        elif args.network == 'shallow_deepconvlstm':     
+            net = ShallowDeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
         else:
             print("Did not provide a valid network name!")
 
@@ -332,6 +335,8 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
         net = DeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
     elif args.network == 'attendanddiscriminate':        
             net = AttendAndDiscriminate(args.nb_channels, args.nb_classes, args.nb_units_lstm, args.nb_filters, args.filter_width, args.nb_layers_lstm, False, args.drop_prob, 0.5, 0.5, 'ReLU', 1, args.gpu)
+    elif args.network == 'shallow_deepconvlstm':     
+            net = ShallowDeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
     else:
         print("Did not provide a valid network name!")
 
