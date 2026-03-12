@@ -8,8 +8,7 @@
 from torch import nn
 import torch
 
-from models.attention import PositionalEncoding
-
+from model.attention import PositionalEncoding
 
 class DeepConvContext(nn.Module):
     """j

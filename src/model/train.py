@@ -22,7 +22,6 @@ from torch.utils.data import DataLoader
 
 from misc.osutils import mkdir_if_missing
 from misc.torchutils import count_parameters, seed_worker
-from model.DeepConvLSTM import ConvBlock, ConvBlockSkip, ConvBlockFixup
 import wandb
 
 def init_weights(network, weight_init):
@@ -281,7 +280,7 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
     count_parameters(network)
 
     # init network using weight initialization of choice
-    network = init_weights(network)
+    network = init_weights(network, config["weights_init"])
 
     # normalize / derive device
     device = config.get("gpu", "cpu")
