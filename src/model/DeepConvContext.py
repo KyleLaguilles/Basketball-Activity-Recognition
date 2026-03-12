@@ -12,7 +12,7 @@ from models.attention import PositionalEncoding
 
 
 class DeepConvContext(nn.Module):
-    """
+    """j
     DeepConvContext model with LSTM, self-attention, or transformer variants.
     
     Args:

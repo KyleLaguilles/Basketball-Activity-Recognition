@@ -15,8 +15,9 @@ from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, precision_
 
 from data_processing.sliding_window import apply_sliding_window
 from misc.osutils import mkdir_if_missing
-from model.AttendAndDiscriminate import AttendAndDiscriminate
+from model.DeepConvContext import DeepConvContext
 from model.DeepConvLSTM import DeepConvLSTM
+from model.AttendAndDiscriminate import AttendAndDiscriminate
 from model.ShallowDeepConvLSTM import ShallowDeepConvLSTM
 from model.train import train, init_optimizer, init_loss, init_scheduler
 import wandb
@@ -108,7 +109,9 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         args.nb_channels = X_train.shape[2]
 
         # network initialization
-        if args.network == 'deepconvlstm':
+        if args.network == 'deepconvcontext':
+            net = DeepConvContext(args.batch_size, args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob, args.bidirectional, args.context_type, args.nb_attention_heads, args.transformer_depth)
+        elif args.network == 'deepconvlstm':
             net = DeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
         elif args.network == 'attendanddiscriminate':        
             net = AttendAndDiscriminate(args.nb_channels, args.nb_classes, args.nb_units_lstm, args.nb_filters, args.filter_width, args.nb_layers_lstm, False, args.drop_prob, 0.5, 0.5, 'ReLU', 1, args.gpu, args.weights_init)
@@ -331,7 +334,9 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
     args.nb_channels = X_train.shape[2]
 
     # network initialization
-    if args.network == 'deepconvlstm':
+    if args.network == 'deepconvcontext':
+            net = DeepConvContext(args.batch_size, args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob, args.bidirectional, args.context_type, args.nb_attention_heads, args.transformer_depth)
+    elif args.network == 'deepconvlstm':
         net = DeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
     elif args.network == 'attendanddiscriminate':        
             net = AttendAndDiscriminate(args.nb_channels, args.nb_classes, args.nb_units_lstm, args.nb_filters, args.filter_width, args.nb_layers_lstm, False, args.drop_prob, 0.5, 0.5, 'ReLU', 1, args.gpu)

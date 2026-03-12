@@ -44,6 +44,10 @@ NETWORK OPTIONS:
 - NB_FILTERS: number of convolution filters employed in each layer of convolution blocks
 - FILTER_WIDTH: width of convolution filters (e.g. 11 = 11x1 filter)
 - DROP_PROB: dropout probability in dropout layers
+- BIDIRECTIONAL: enable the use of a bidirectional LSTM (currently only affects deepconvcontext)
+- TYPEOFCONTEXT: select the type of deepconvcontext architecture (e.g. 'lstm', 'self-attention', or 'transformer')
+- NB_ATTENTION_HEADS: Number of attention heads for self-attention and transformer models
+- TRANSFORMER_DEPTH: Depth of the transformer model (currently only affects deepconvcontext)
 """
 
 NETWORK = 'deepconvlstm'
@@ -54,6 +58,10 @@ FILTER_WIDTH = 11
 DROP_PROB = 0.5
 POOL_TYPE = 'max'
 POOL_KERNEL_WIDTH = 2
+BIDIRECTIONAL = False
+TYPE_OF_CONTEXT = 'lstm'
+NB_ATTENTION_HEADS = 4
+TRANSFORMER_DEPTH = 3
 
 """
 TRAINING OPTIONS:
@@ -196,6 +204,10 @@ if __name__ == '__main__':
     parser.add_argument('--drop_prob', default=DROP_PROB, type=float)
     parser.add_argument('--pool_type', default=POOL_TYPE, type=str)
     parser.add_argument('--pool_kernel_width', default=POOL_KERNEL_WIDTH, type=int)
+    parser.add_argument('--bidirectional', default=BIDIRECTIONAL, action='store_true')
+    parser.add_argument('--context_type', default=TYPE_OF_CONTEXT, type=str)
+    parser.add_argument('--nb_attention_heads', default=NB_ATTENTION_HEADS, type=str)
+    parser.add_argument('--transformer_depth', default=TRANSFORMER_DEPTH, type=int)
 
     # TRAINING OPTIONS
     parser.add_argument('--seed', default=SEED, type=int)
