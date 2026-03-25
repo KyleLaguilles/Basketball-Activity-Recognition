@@ -24,6 +24,17 @@ from model.TinyHAR import TinyHAR_Model
 from model.train import train, init_optimizer, init_loss, init_scheduler
 import wandb
 
+class TinyHARWrapper(nn.Module):
+    """Wraps TinyHAR to handle input shape: (B, T, C) -> (B, 1, T, C)"""
+    use_fixup = False  # required by init_weights in train.py
+    
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x):
+        x = x.unsqueeze(1)  # (B, T, C) -> (B, 1, T, C)
+        return self.model(x)
 
 def save_composite_confusion_matrix(v_conf_mat, class_names, log_dir, run=None, title='Confusion Matrix (All Subjects)'):
     """

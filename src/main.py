@@ -62,6 +62,11 @@ BIDIRECTIONAL = False
 TYPE_OF_CONTEXT = 'lstm'
 NB_ATTENTION_HEADS = 4
 TRANSFORMER_DEPTH = 3
+FILTER_NUM = 20
+CROSS_CHANNEL_INTERACTION_TYPE = 'attn'
+CROSS_CHANNEL_AGGREGATION_TYPE = 'FC'
+TEMPORAL_INFO_INTERACTION_TYPE = 'gru'
+TEMPORAL_INFO_AGGREGATION_TYPE = 'FC'
 
 """
 TRAINING OPTIONS:
@@ -230,6 +235,11 @@ if __name__ == '__main__':
     parser.add_argument('--lr_decay', default=LR_DECAY, type=float)
     parser.add_argument('--early_stopping', default=EARLY_STOPPING, action='store_true')
     parser.add_argument('--es_patience', default=ES_PATIENCE, type=int)
+    parser.add_argument('--filter_num', default=FILTER_NUM, type=int)
+    parser.add_argument('--cross_channel_interaction_type', default=CROSS_CHANNEL_INTERACTION_TYPE, type=str)
+    parser.add_argument('--cross_channel_aggregation_type', default=CROSS_CHANNEL_AGGREGATION_TYPE, type=str)
+    parser.add_argument('--temporal_info_interaction_type', default=TEMPORAL_INFO_INTERACTION_TYPE, type=str)
+    parser.add_argument('--temporal_info_aggregation_type', default=TEMPORAL_INFO_AGGREGATION_TYPE, type=str)
 
     # LOGGING OPTIONS
     parser.add_argument('--name', default=NAME, type=str)
