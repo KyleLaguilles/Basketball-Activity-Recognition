@@ -11,6 +11,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn as nn
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, precision_score, recall_score, f1_score
 
 from data_processing.sliding_window import apply_sliding_window
@@ -19,6 +20,7 @@ from model.DeepConvContext import DeepConvContext
 from model.DeepConvLSTM import DeepConvLSTM
 from model.AttendAndDiscriminate import AttendAndDiscriminate
 from model.ShallowDeepConvLSTM import ShallowDeepConvLSTM
+from model.TinyHAR import TinyHAR_Model
 from model.train import train, init_optimizer, init_loss, init_scheduler
 import wandb
 
@@ -117,6 +119,17 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
             net = AttendAndDiscriminate(args.nb_channels, args.nb_classes, args.nb_units_lstm, args.nb_filters, args.filter_width, args.nb_layers_lstm, False, args.drop_prob, 0.5, 0.5, 'ReLU', 1, args.gpu, args.weights_init)
         elif args.network == 'shallow_deepconvlstm':     
             net = ShallowDeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
+        elif args.network == 'tinyhar':
+            _tinyhar = TinyHAR_Model(
+                input_shape=(1, 1, args.window_size, args.nb_channels),
+                number_class=args.nb_classes,
+                filter_num=args.filter_num,
+                cross_channel_interaction_type=args.cross_channel_interaction_type,
+                cross_channel_aggregation_type=args.cross_channel_aggregation_type,
+                temporal_info_interaction_type=args.temporal_info_interaction_type,
+                temporal_info_aggregation_type=args.temporal_info_aggregation_type
+            )
+            net = TinyHARWrapper(_tinyhar)
         else:
             print("Did not provide a valid network name!")
 
@@ -342,6 +355,17 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
             net = AttendAndDiscriminate(args.nb_channels, args.nb_classes, args.nb_units_lstm, args.nb_filters, args.filter_width, args.nb_layers_lstm, False, args.drop_prob, 0.5, 0.5, 'ReLU', 1, args.gpu)
     elif args.network == 'shallow_deepconvlstm':     
             net = ShallowDeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
+    elif args.network == 'tinyhar':
+        _tinyhar = TinyHAR_Model(
+            input_shape=(1, 1, args.window_size, args.nb_channels),
+            number_class=args.nb_classes,
+            filter_num=args.filter_num,
+            cross_channel_interaction_type=args.cross_channel_interaction_type,
+            cross_channel_aggregation_type=args.cross_channel_aggregation_type,
+            temporal_info_interaction_type=args.temporal_info_interaction_type,
+            temporal_info_aggregation_type=args.temporal_info_aggregation_type
+        )
+        net = TinyHARWrapper(_tinyhar)
     else:
         print("Did not provide a valid network name!")
 
