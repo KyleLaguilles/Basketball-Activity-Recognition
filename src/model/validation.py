@@ -24,18 +24,6 @@ from model.TinyHAR import TinyHAR_Model
 from model.train import train, init_optimizer, init_loss, init_scheduler
 import wandb
 
-class TinyHARWrapper(nn.Module):
-    """Wraps TinyHAR to handle input shape: (B, T, C) -> (B, 1, T, C)"""
-    use_fixup = False  # required by init_weights in train.py
-    
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-
-    def forward(self, x):
-        x = x.unsqueeze(1)  # (B, T, C) -> (B, 1, T, C)
-        return self.model(x)
-
 def save_composite_confusion_matrix(v_conf_mat, class_names, log_dir, run=None, title='Confusion Matrix (All Subjects)'):
     """
     Save a styled composite confusion matrix heatmap similar to the paper's Figure 12.
@@ -131,7 +119,7 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         elif args.network == 'shallow_deepconvlstm':     
             net = ShallowDeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
         elif args.network == 'tinyhar':
-            _tinyhar = TinyHAR_Model(
+            net = TinyHAR_Model(
                 input_shape=(1, 1, args.window_size, args.nb_channels),
                 number_class=args.nb_classes,
                 filter_num=args.filter_num,
@@ -140,7 +128,6 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                 temporal_info_interaction_type=args.temporal_info_interaction_type,
                 temporal_info_aggregation_type=args.temporal_info_aggregation_type
             )
-            net = TinyHARWrapper(_tinyhar)
         else:
             print("Did not provide a valid network name!")
 
@@ -367,7 +354,7 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
     elif args.network == 'shallow_deepconvlstm':     
             net = ShallowDeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
     elif args.network == 'tinyhar':
-        _tinyhar = TinyHAR_Model(
+        net = TinyHAR_Model(
             input_shape=(1, 1, args.window_size, args.nb_channels),
             number_class=args.nb_classes,
             filter_num=args.filter_num,
@@ -376,7 +363,6 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
             temporal_info_interaction_type=args.temporal_info_interaction_type,
             temporal_info_aggregation_type=args.temporal_info_aggregation_type
         )
-        net = TinyHARWrapper(_tinyhar)
     else:
         print("Did not provide a valid network name!")
 

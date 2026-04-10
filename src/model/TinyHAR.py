@@ -570,7 +570,9 @@ class TinyHAR_Model(nn.Module):
 
 
     def forward(self, x):
-        # B F L C   
+        # B L C
+        x = x.unsqueeze(1)  # (B, L, C) -> (B, 1, L, C)
+
         for layer in self.layers_conv:
             x = layer(x)
 
@@ -624,13 +626,3 @@ class TinyHAR_Model(nn.Module):
 
         y = self.prediction(x)
         return y
-
-
-
-
-
-
-
-
-
-
