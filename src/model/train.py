@@ -24,18 +24,6 @@ from misc.osutils import mkdir_if_missing
 from misc.torchutils import count_parameters, seed_worker
 import wandb
 
-class TinyHARWrapper(nn.Module):
-    """Wraps TinyHAR to handle input shape: (B, T, C) -> (B, 1, T, C)"""
-    use_fixup = False  # required by init_weights in train.py
-    
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-
-    def forward(self, x):
-        x = x.unsqueeze(1)  # (B, T, C) -> (B, 1, T, C)
-        return self.model(x)
-
 def init_weights(network, weight_init):
     """
     Weight initialization of network (initialises all LSTM, Conv2D and Linear layers according to weight_init parameter

@@ -64,6 +64,11 @@ NB_ATTENTION_HEADS = 4
 TRANSFORMER_DEPTH = 3
 FILTER_NUM = 20
 CROSS_CHANNEL_INTERACTION_TYPE = 'attn'
+NB_CONV_BLOCKS = 4
+NB_UNITS_GRU = 64
+FILTER_SIZES = (1, 3, 5, 11)
+BRANCH_FILTERS = (32, 64, 64, 64)
+NB_UNITS_GRU_IC = 128
 CROSS_CHANNEL_AGGREGATION_TYPE = 'FC'
 TEMPORAL_INFO_INTERACTION_TYPE = 'gru'
 TEMPORAL_INFO_AGGREGATION_TYPE = 'FC'
@@ -236,6 +241,11 @@ if __name__ == '__main__':
     parser.add_argument('--early_stopping', default=EARLY_STOPPING, action='store_true')
     parser.add_argument('--es_patience', default=ES_PATIENCE, type=int)
     parser.add_argument('--filter_num', default=FILTER_NUM, type=int)
+    parser.add_argument('--nb_conv_blocks', default=NB_CONV_BLOCKS, type=int)
+    parser.add_argument('--nb_units_gru', default=NB_UNITS_GRU, type=int)
+    parser.add_argument('--filter_sizes', default=FILTER_SIZES, nargs='+', type=int)
+    parser.add_argument('--branch_filters', default=BRANCH_FILTERS, nargs='+', type=int)
+    parser.add_argument('--nb_units_gru_ic', default=NB_UNITS_GRU_IC, type=int)
     parser.add_argument('--cross_channel_interaction_type', default=CROSS_CHANNEL_INTERACTION_TYPE, type=str)
     parser.add_argument('--cross_channel_aggregation_type', default=CROSS_CHANNEL_AGGREGATION_TYPE, type=str)
     parser.add_argument('--temporal_info_interaction_type', default=TEMPORAL_INFO_INTERACTION_TYPE, type=str)

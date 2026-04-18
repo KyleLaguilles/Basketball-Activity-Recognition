@@ -21,8 +21,35 @@ from model.DeepConvLSTM import DeepConvLSTM
 from model.AttendAndDiscriminate import AttendAndDiscriminate
 from model.ShallowDeepConvLSTM import ShallowDeepConvLSTM
 from model.TinyHAR import TinyHAR_Model
+from model.TinierHAR import TinierHAR_Model
+from model.ICGNet import ICGNet
+from model.InceptionContext import InceptionContext
 from model.train import train, init_optimizer, init_loss, init_scheduler
 import wandb
+
+class TinyHARWrapper(nn.Module):
+    """Wraps TinyHAR to handle input shape: (B, T, C) -> (B, 1, T, C)"""
+    use_fixup = False  # required by init_weights in train.py
+
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x):
+        x = x.unsqueeze(1)  # (B, T, C) -> (B, 1, T, C)
+        return self.model(x)
+
+class TinierHARWrapper(nn.Module):
+    """Wraps TinierHAR to handle input shape: (B, T, C) -> (B, 1, T, C)"""
+    use_fixup = False  # required by init_weights in train.py
+
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x):
+        x = x.unsqueeze(1)  # (B, T, C) -> (B, 1, T, C)
+        return self.model(x)
 
 def save_composite_confusion_matrix(v_conf_mat, class_names, log_dir, run=None, title='Confusion Matrix (All Subjects)'):
     """
@@ -127,6 +154,37 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                 cross_channel_aggregation_type=args.cross_channel_aggregation_type,
                 temporal_info_interaction_type=args.temporal_info_interaction_type,
                 temporal_info_aggregation_type=args.temporal_info_aggregation_type
+            )
+        elif args.network == 'tinierhar':
+            _tinierhar = TinierHAR_Model(
+                input_shape=(1, 1, args.window_size, args.nb_channels),
+                nb_classes=args.nb_classes,
+                filter_scaling_factor=1,
+                config={
+                    'nb_conv_blocks': args.nb_conv_blocks,
+                    'nb_units_gru': args.nb_units_gru,
+                    'nb_filters': args.nb_filters,
+                    'drop_prob': args.drop_prob,
+                }
+            )
+            net = TinierHARWrapper(_tinierhar)
+        elif args.network == 'icgnet':
+            net = ICGNet(
+                channels=args.nb_channels,
+                classes=args.nb_classes,
+                window_size=args.window_size,
+                drop_prob=args.drop_prob,
+            )
+        elif args.network == 'inceptioncontext':
+            net = InceptionContext(
+                args.batch_size, args.nb_channels, args.nb_classes, args.window_size,
+                lstm_units=args.nb_units_lstm,
+                lstm_layers=args.nb_layers_lstm,
+                dropout=args.drop_prob,
+                bidirectional=args.bidirectional,
+                filter_sizes=args.filter_sizes,
+                branch_filters=args.branch_filters,
+                nb_units_gru_ic=args.nb_units_gru_ic,
             )
         else:
             print("Did not provide a valid network name!")
@@ -362,6 +420,37 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
             cross_channel_aggregation_type=args.cross_channel_aggregation_type,
             temporal_info_interaction_type=args.temporal_info_interaction_type,
             temporal_info_aggregation_type=args.temporal_info_aggregation_type
+        )
+    elif args.network == 'tinierhar':
+        _tinierhar = TinierHAR_Model(
+            input_shape=(1, 1, args.window_size, args.nb_channels),
+            nb_classes=args.nb_classes,
+            filter_scaling_factor=1,
+            config={
+                'nb_conv_blocks': args.nb_conv_blocks,
+                'nb_units_gru': args.nb_units_gru,
+                'nb_filters': args.nb_filters,
+                'drop_prob': args.drop_prob,
+            }
+        )
+        net = TinierHARWrapper(_tinierhar)
+    elif args.network == 'icgnet':
+        net = ICGNet(
+            channels=args.nb_channels,
+            classes=args.nb_classes,
+            window_size=args.window_size,
+            drop_prob=args.drop_prob,
+        )
+    elif args.network == 'inceptioncontext':
+        net = InceptionContext(
+            args.batch_size, args.nb_channels, args.nb_classes, args.window_size,
+            lstm_units=args.nb_units_lstm,
+            lstm_layers=args.nb_layers_lstm,
+            dropout=args.drop_prob,
+            bidirectional=args.bidirectional,
+            filter_sizes=args.filter_sizes,
+            branch_filters=args.branch_filters,
+            nb_units_gru_ic=args.nb_units_gru_ic,
         )
     else:
         print("Did not provide a valid network name!")
