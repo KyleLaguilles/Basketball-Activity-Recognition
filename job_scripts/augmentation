@@ -1,0 +1,84 @@
+Batch 1 (4 jobs):
+
+
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 2 --augment_recipe conservative --augment_context_k 2 --augment_seed 1 \
+  --seed 1 --save_val_npz --name aug_m2_conservative_seed1 &
+sleep 2
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 2 --augment_recipe warp --augment_context_k 2 --augment_seed 1 \
+  --seed 1 --save_val_npz --name aug_m2_warp_seed1 &
+sleep 2
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 2 --augment_recipe rotate --augment_context_k 2 --augment_seed 1 \
+  --seed 1 --save_val_npz --name aug_m2_rotate_seed1 &
+sleep 2
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 4 --augment_recipe conservative --augment_context_k 2 --augment_seed 1 \
+  --seed 1 --save_val_npz --name aug_m4_conservative_seed1 &
+wait
+Batch 2 (4 jobs):
+
+
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 4 --augment_recipe warp --augment_context_k 2 --augment_seed 1 \
+  --seed 1 --save_val_npz --name aug_m4_warp_seed1 &
+sleep 2
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 4 --augment_recipe rotate --augment_context_k 2 --augment_seed 1 \
+  --seed 1 --save_val_npz --name aug_m4_rotate_seed1 &
+sleep 2
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 8 --augment_recipe conservative --augment_context_k 2 --augment_seed 1 \
+  --seed 1 --save_val_npz --name aug_m8_conservative_seed1 &
+sleep 2
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 8 --augment_recipe warp --augment_context_k 2 --augment_seed 1 \
+  --seed 1 --save_val_npz --name aug_m8_warp_seed1 &
+wait
+Batch 3 (1 job):
+
+
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 8 --augment_recipe rotate --augment_context_k 2 --augment_seed 1 \
+  --seed 1 --save_val_npz --name aug_m8_rotate_seed1 &
+wait
+
+
+
+
+# Batch 2-redo (4 jobs)
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 4 --augment_recipe warp --augment_context_k 2 --augment_seed 1 \
+  --epochs 40 --seed 1 --save_val_npz --name aug_m4_warp_seed1_e40 &
+sleep 2
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 4 --augment_recipe rotate --augment_context_k 2 --augment_seed 1 \
+  --epochs 40 --seed 1 --save_val_npz --name aug_m4_rotate_seed1_e40 &
+sleep 2
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 8 --augment_recipe conservative --augment_context_k 2 --augment_seed 1 \
+  --epochs 40 --seed 1 --save_val_npz --name aug_m8_conservative_seed1_e40 &
+sleep 2
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 8 --augment_recipe warp --augment_context_k 2 --augment_seed 1 \
+  --epochs 40 --seed 1 --save_val_npz --name aug_m8_warp_seed1_e40 &
+sleep 2
+python src/main.py --network inceptioncontext --test_type subset_specific --test_case loso_G \
+  --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --augment_classes rebound,layup --augment_multiplier 8 --augment_recipe rotate --augment_context_k 2 --augment_seed 1 \
+  --epochs 40 --seed 1 --save_val_npz --name aug_m8_rotate_seed1_e40 &
+wait

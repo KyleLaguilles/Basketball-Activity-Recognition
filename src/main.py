@@ -68,6 +68,7 @@ NB_CONV_BLOCKS = 4
 NB_UNITS_GRU = 64
 FILTER_SIZES = (1, 3, 5, 11)
 BRANCH_FILTERS = (32, 64, 64, 64)
+BRANCH_DILATIONS = (1, 1, 1, 1)
 NB_UNITS_GRU_IC = 128
 CROSS_CHANNEL_AGGREGATION_TYPE = 'FC'
 TEMPORAL_INFO_INTERACTION_TYPE = 'gru'
@@ -149,7 +150,7 @@ def main(args):
 
     ts = datetime.datetime.fromtimestamp(int(time.time()))
     safe_ts = ts.strftime("%Y-%m-%d_%H-%M-%S")
-    log_dir = os.path.join('logs', args.test_type, args.test_case, args.network, str(safe_ts))
+    log_dir = os.path.join('logs', args.test_type, args.test_case, args.network, f"{safe_ts}_{args.name}")
     os.makedirs(log_dir, exist_ok=True)
     sys.stdout = Logger(os.path.join(log_dir, 'log.txt'))
 
@@ -176,6 +177,23 @@ def main(args):
     args.nb_classes = nb_classes
     args.class_names = class_names
     args.has_void = has_void
+
+    if args.subsample_classes:
+        unknown = sorted(set(args.subsample_classes) - set(class_names))
+        if unknown:
+            raise ValueError(f"--subsample_classes contains unknown class name(s): {unknown}. "
+                              f"Valid class names: {class_names}")
+    if args.augment_classes:
+        unknown = sorted(set(args.augment_classes) - set(class_names))
+        if unknown:
+            raise ValueError(f"--augment_classes contains unknown class name(s): {unknown}. "
+                              f"Valid class names: {class_names}")
+    if args.loso_subjects:
+        known_subjects = {str(s) for s in subjects}
+        unknown = sorted(set(args.loso_subjects) - known_subjects)
+        if unknown:
+            raise ValueError(f"--loso_subjects contains unknown subject name(s): {unknown}. "
+                              f"Valid subjects: {sorted(known_subjects)}")
 
     ############################################# TRAINING #############################################################
 
@@ -215,6 +233,7 @@ if __name__ == '__main__':
     parser.add_argument('--pool_type', default=POOL_TYPE, type=str)
     parser.add_argument('--pool_kernel_width', default=POOL_KERNEL_WIDTH, type=int)
     parser.add_argument('--bidirectional', default=BIDIRECTIONAL, action='store_true')
+    parser.add_argument('--use_channel_affine', action='store_true', help='Enable learnable per-channel input scaling (gamma*x + beta) before the inception branches.')
     parser.add_argument('--context_type', default=TYPE_OF_CONTEXT, type=str)
     parser.add_argument('--nb_attention_heads', default=NB_ATTENTION_HEADS, type=str)
     parser.add_argument('--transformer_depth', default=TRANSFORMER_DEPTH, type=int)
@@ -233,6 +252,13 @@ if __name__ == '__main__':
     parser.add_argument('--smoothing', default=SMOOTHING, type=float)
     parser.add_argument('--gpu', default=GPU, type=str)
     parser.add_argument('--weighted', default=WEIGHTED, action='store_true')
+    parser.add_argument('--weight_scheme', default=None, choices=['none', 'inverse', 'sqrt_inverse', 'capped', 'power_inverse'], type=str,
+                         help='Class weighting scheme for the loss. Bare --weighted maps to inverse; '
+                              'omitting both --weighted and --weight_scheme maps to none.')
+    parser.add_argument('--weight_cap', default=None, type=float,
+                         help='Required iff --weight_scheme capped: max/min balanced-weight ratio allowed after capping.')
+    parser.add_argument('--weight_exponent', default=0.5, type=float,
+                         help='Exponent for --weight_scheme power_inverse: class_weights = (1/class_counts) ** exponent.')
     parser.add_argument('--shuffling', default=SHUFFLING, action='store_true')
     parser.add_argument('--adj_lr', default=ADJ_LR, action='store_true')
     parser.add_argument('--lr_scheduler', default=LR_SCHEDULER, type=str)
@@ -245,11 +271,48 @@ if __name__ == '__main__':
     parser.add_argument('--nb_units_gru', default=NB_UNITS_GRU, type=int)
     parser.add_argument('--filter_sizes', default=FILTER_SIZES, nargs='+', type=int)
     parser.add_argument('--branch_filters', default=BRANCH_FILTERS, nargs='+', type=int)
+    parser.add_argument('--branch_dilations', default=BRANCH_DILATIONS, nargs='+', type=int)
     parser.add_argument('--nb_units_gru_ic', default=NB_UNITS_GRU_IC, type=int)
     parser.add_argument('--cross_channel_interaction_type', default=CROSS_CHANNEL_INTERACTION_TYPE, type=str)
     parser.add_argument('--cross_channel_aggregation_type', default=CROSS_CHANNEL_AGGREGATION_TYPE, type=str)
     parser.add_argument('--temporal_info_interaction_type', default=TEMPORAL_INFO_INTERACTION_TYPE, type=str)
     parser.add_argument('--temporal_info_aggregation_type', default=TEMPORAL_INFO_AGGREGATION_TYPE, type=str)
+
+    # LEARNING-CURVE / SUBSAMPLING OPTIONS (default-off; no effect unless --subsample_classes is set)
+    parser.add_argument('--subsample_classes', default=None, type=str,
+                         help='Comma-separated class names whose training windows are subsampled '
+                              '(e.g. "rebound,layup"). Unset = no subsampling (default pipeline behavior).')
+    parser.add_argument('--subsample_fraction', default=1.0, type=float,
+                         help='Fraction of each listed class\'s training windows to keep per subject. '
+                              'No-op at 1.0.')
+    parser.add_argument('--subsample_seed', default=0, type=int,
+                         help='RNG seed for deterministic, subject-stratified subsampling.')
+    parser.add_argument('--loso_subjects', default=None, type=str,
+                         help='Comma-separated subject names to restrict the LOSO fold loop to '
+                              '(e.g. "b512,a0da"). Unset = run all folds (default pipeline behavior).')
+    parser.add_argument('--save_val_npz', default=False, action='store_true',
+                         help='Save per-window val predictions/true labels for each fold to '
+                              'preds_<fold>_<fraction>.npz under the run log dir.')
+
+    # AUGMENTATION OPTIONS (default-off; no effect unless --augment_classes is set)
+    parser.add_argument('--augment_classes', default=None, type=str,
+                         help='Comma-separated class names whose training windows are augmented '
+                              '(e.g. "rebound,layup"). Unset = no augmentation (default pipeline behavior).')
+    parser.add_argument('--augment_multiplier', default=1, type=int,
+                         help='Each real window of a target class yields augment_multiplier-1 '
+                              'augmented copies (total augment_multiplier x). 1 = off (no-op).')
+    parser.add_argument('--augment_recipe', default='conservative', type=str,
+                         choices=['conservative', 'warp', 'rotate'],
+                         help='conservative = jitter+scale+magwarp; warp = conservative+timewarp; '
+                              'rotate = warp+3D rotation of the accel triplet.')
+    parser.add_argument('--augment_seed', default=0, type=int,
+                         help='RNG seed for deterministic augmentation transform sampling.')
+    parser.add_argument('--augment_context_k', default=2, type=int,
+                         help='Segment radius in windows: each augmented copy is built from the '
+                              'contiguous span [i-k, i+k] around the target window i (truncated at '
+                              'subject boundaries), not the window alone -- required because this '
+                              'repo\'s context-aware networks (InceptionContext, DeepConvContext) '
+                              'read the DataLoader batch dimension as a temporal sequence.')
 
     # LOGGING OPTIONS
     parser.add_argument('--name', default=NAME, type=str)
@@ -260,5 +323,41 @@ if __name__ == '__main__':
     parser.add_argument('--save_analysis', default=SAVE_ANALYSIS, action='store_true')
 
     args = parser.parse_args()
+
+    # resolve --weighted / --weight_scheme into a single args.weight_scheme; hard-error on contradictions
+    if args.weight_scheme is None:
+        args.weight_scheme = 'inverse' if args.weighted else 'none'
+    elif args.weighted and args.weight_scheme != 'inverse':
+        parser.error(
+            f"--weighted implies weight_scheme=inverse, but --weight_scheme {args.weight_scheme!r} "
+            "was also given. Remove --weighted or set --weight_scheme inverse to resolve the contradiction."
+        )
+    if (args.weight_scheme == 'capped') != (args.weight_cap is not None):
+        parser.error(
+            "--weight_cap is required iff --weight_scheme capped "
+            f"(weight_scheme={args.weight_scheme!r}, weight_cap={args.weight_cap!r})."
+        )
+    if args.weight_scheme == 'capped' and args.weight_cap <= 1:
+        parser.error(f"--weight_cap must be > 1 (got {args.weight_cap!r}).")
+
+    # resolve comma-separated list flags; unset -> empty list -> no-op downstream
+    args.subsample_classes = (
+        [c.strip() for c in args.subsample_classes.split(',') if c.strip()]
+        if args.subsample_classes else []
+    )
+    args.augment_classes = (
+        [c.strip() for c in args.augment_classes.split(',') if c.strip()]
+        if args.augment_classes else []
+    )
+    args.loso_subjects = (
+        [s.strip() for s in args.loso_subjects.split(',') if s.strip()]
+        if args.loso_subjects else []
+    )
+    if args.subsample_classes and not (0.0 <= args.subsample_fraction <= 1.0):
+        parser.error(f"--subsample_fraction must be in [0, 1] (got {args.subsample_fraction!r}).")
+    if args.augment_classes and args.augment_multiplier < 1:
+        parser.error(f"--augment_multiplier must be >= 1 (got {args.augment_multiplier!r}).")
+    if args.augment_classes and args.augment_context_k < 0:
+        parser.error(f"--augment_context_k must be >= 0 (got {args.augment_context_k!r}).")
 
     main(args)

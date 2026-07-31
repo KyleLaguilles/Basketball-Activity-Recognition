@@ -1,9 +1,32 @@
 ##################################################
 # InceptionContext: Inception-branch Stage 1 + DeepConvContext Stage 2
 ##################################################
-# Version 1 
+
 import torch
 import torch.nn as nn
+
+
+class ChannelAffine(nn.Module):
+    """
+    Learnable per-channel affine scale and shift: gamma * x + beta.
+
+    Equivalent to the affine portion of LayerNorm with normalization disabled.
+    Inputs are expected to already be z-scored upstream, so only the learnable
+    rebalancing (not normalization) is applied here.
+
+    Args:
+        channels: int
+            Number of input channels (C). Adds 2*C learnable parameters.
+    """
+
+    def __init__(self, channels):
+        super().__init__()
+        self.gamma = nn.Parameter(torch.ones(channels))   # (C,)
+        self.beta  = nn.Parameter(torch.zeros(channels))  # (C,)
+
+    def forward(self, x):
+        # x: (B, T, C)
+        return self.gamma * x + self.beta                  # broadcasts over B, T
 
 
 class _InceptionBranch2d(nn.Module):
@@ -12,13 +35,16 @@ class _InceptionBranch2d(nn.Module):
 
     Uses Conv2d(kernel_size, 1) instead of Conv1d so the convolution sees
     cross-channel relationships (channels are preserved as the spatial W dim).
-    Temporal 'same' padding keeps T unchanged so all branches can be concatenated.
+    Temporal 'same' padding keeps T unchanged for any dilation value:
+    padding = ((kernel_size - 1) * dilation) // 2. For dilation=1 this
+    reduces to kernel_size // 2, preserving bit-identical outputs.
+    The 1x1 bottleneck conv is undilated.
     """
 
-    def __init__(self, in_channels, out_channels, kernel_size, drop_prob):
+    def __init__(self, in_channels, out_channels, kernel_size, drop_prob, dilation=1):
         super().__init__()
-        padding = (kernel_size // 2, 0)  # same-padding along T only
-        self.conv1 = nn.Conv2d(in_channels, out_channels, (kernel_size, 1), padding=padding)
+        padding = (((kernel_size - 1) * dilation) // 2, 0)  # same-padding along T for any dilation
+        self.conv1 = nn.Conv2d(in_channels, out_channels, (kernel_size, 1), padding=padding, dilation=(dilation, 1))
         self.relu1 = nn.ReLU()
         self.dropout = nn.Dropout(drop_prob)
         self.conv2 = nn.Conv2d(out_channels, out_channels // 2, (1, 1))
@@ -65,6 +91,14 @@ class InceptionContext(nn.Module):
             Number of filters per branch before the 1×1 halving conv.
         nb_units_gru_ic: int
             Hidden units for the within-window GRU (Stage 1).
+        use_channel_affine: bool
+            When True, prepend a ChannelAffine layer that applies a learnable
+            per-channel gamma/beta to the (B, T, C) input before any other
+            processing. Default False (preserves existing behavior exactly).
+        branch_dilations: tuple of int
+            Dilation factor for the temporal conv in each inception branch.
+            Must have the same length as filter_sizes. Default (1, 1, 1, 1)
+            preserves bit-identical outputs to the undilated baseline.
     """
 
     def __init__(
@@ -80,15 +114,28 @@ class InceptionContext(nn.Module):
         filter_sizes=(1, 3, 5, 11),
         branch_filters=(32, 64, 64, 64),
         nb_units_gru_ic=128,
+        use_channel_affine=False,
+        branch_dilations=(1, 1, 1, 1),
     ):
         super().__init__()
+
+        if len(branch_dilations) != len(filter_sizes):
+            raise ValueError(
+                f"branch_dilations length ({len(branch_dilations)}) must match "
+                f"filter_sizes length ({len(filter_sizes)})"
+            )
+
+        # --- Optional per-channel affine (prepended to Stage 1) ---
+        self.use_channel_affine = use_channel_affine
+        if use_channel_affine:
+            self.channel_affine = ChannelAffine(channels)
 
         self.lstm_units = lstm_units
         self.bidirectional = bidirectional
 
         # --- Stage 1: inception branches ---
         self.branches = nn.ModuleList([
-            _InceptionBranch2d(1, branch_filters[i], filter_sizes[i], dropout)
+            _InceptionBranch2d(1, branch_filters[i], filter_sizes[i], dropout, branch_dilations[i])
             for i in range(len(filter_sizes))
         ])
 
@@ -119,6 +166,8 @@ class InceptionContext(nn.Module):
 
     def forward(self, x):
         # x: (B, T, C)
+        if self.use_channel_affine:
+            x = self.channel_affine(x)                       # (B, T, C) — per-channel scale/shift
         x = x.unsqueeze(1)                                   # (B, 1, T, C)
 
         # Stage 1 — inception branches

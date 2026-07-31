@@ -15,6 +15,8 @@ import torch.nn as nn
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, precision_score, recall_score, f1_score
 
 from data_processing.sliding_window import apply_sliding_window
+from data_processing.subsampling import subsample_training_windows
+from data_processing.augmentation import augment_training_windows
 from misc.osutils import mkdir_if_missing
 from model.DeepConvContext import DeepConvContext
 from model.DeepConvLSTM import DeepConvLSTM
@@ -110,7 +112,11 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
     # per-subject best epoch and F1 tracking
     subject_best_records = []
 
-    for i, sbj in enumerate(np.unique(data[:, 0])):
+    fold_subjects = np.unique(data[:, 0])
+    if args.loso_subjects:
+        fold_subjects = np.array([sbj for sbj in fold_subjects if str(args.subjects[int(sbj)]) in args.loso_subjects])
+
+    for i, sbj in enumerate(fold_subjects):
         print('\n VALIDATING FOR SUBJECT {0}; {1} OF {2}'.format(args.subjects[int(sbj)], int(sbj) + 1, int(len(np.unique(data[:, 0])))))
         train_data = data[data[:, 0] != sbj]
         val_data = data[data[:, 0] == sbj]
@@ -131,7 +137,80 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                                             sliding_window_overlap=args.sw_overlap,
                                             )
 
+        # subsample training windows of the targeted classes BEFORE the subject-id column
+        # (X_train[:, 0, 0]) is stripped below -- stratification needs it. Eval (X_val, y_val)
+        # was windowed independently from val_data above and is never touched here.
+        if args.subsample_classes:
+            train_counts_pre = np.bincount(y_train.astype(int), minlength=args.nb_classes)
+            X_train, y_train = subsample_training_windows(
+                X_train, y_train,
+                target_classes=args.subsample_classes,
+                fraction=args.subsample_fraction,
+                seed=args.subsample_seed,
+                class_names=args.class_names,
+            )
+            train_counts_post = np.bincount(y_train.astype(int), minlength=args.nb_classes)
+            print(f'  Subsample classes={args.subsample_classes} fraction={args.subsample_fraction} seed={args.subsample_seed}:')
+            print(f'    train windows: {int(train_counts_pre.sum())} -> {int(train_counts_post.sum())}')
+            for c in range(args.nb_classes):
+                if train_counts_pre[c] != train_counts_post[c]:
+                    print(f'    {args.class_names[c]}: {int(train_counts_pre[c])} -> {int(train_counts_post[c])}')
+
+        # augment training windows of the targeted classes -- runs AFTER subsampling so the two
+        # compose (subsample first, then augment), and BEFORE the subject-id column is stripped
+        # below since augment_training_windows also reads X_train[:, :, 0] to carry subject id
+        # onto augmented copies. Eval (X_val, y_val) is never touched here. Segment-level (not
+        # per-window) because batch = context for this repo's context-aware networks -- see
+        # data_processing/augmentation.py's module docstring.
+        if args.augment_classes:
+            aug_counts_pre = np.bincount(y_train.astype(int), minlength=args.nb_classes)
+            n_before = len(y_train)
+            n_subject_splices_baseline = max(0, len(np.unique(X_train[:, 0, 0])) - 1)
+
+            X_train, y_train, aug_stats = augment_training_windows(
+                X_train, y_train,
+                target_classes=args.augment_classes,
+                multiplier=args.augment_multiplier,
+                recipe=args.augment_recipe,
+                seed=args.augment_seed,
+                class_names=args.class_names,
+                context_k=args.augment_context_k,
+                sw_overlap=args.sw_overlap,
+            )
+            aug_counts_post = np.bincount(y_train.astype(int), minlength=args.nb_classes)
+
+            print(f'  Augment classes={args.augment_classes} multiplier={args.augment_multiplier} '
+                  f'recipe={args.augment_recipe} seed={args.augment_seed} context_k={args.augment_context_k}:')
+            print(f'    train windows: {int(aug_counts_pre.sum())} -> {int(aug_counts_post.sum())}')
+            print(f'    segments appended: {aug_stats["n_segments"]} '
+                  f'(vs. {n_subject_splices_baseline} baseline subject-boundary splices already in this fold)')
+            print(f'    target-class counts (anchor-driven; always exactly pre*(multiplier-1) by construction):')
+            for c in args.augment_classes:
+                cid = args.class_names.index(c)
+                expected = int(aug_counts_pre[cid]) * (args.augment_multiplier - 1)
+                actual_anchor = aug_stats['anchor_added'][c]
+                actual_total = int(aug_counts_post[cid]) - int(aug_counts_pre[cid])
+                flag = '' if actual_total == expected else '  <-- spillover contamination from a co-targeted class, NOT exactly N x'
+                print(f'      {c}: {int(aug_counts_pre[cid])} -> {int(aug_counts_post[cid])} '
+                      f'(anchor-added={actual_anchor}, expected={expected}, total-added={actual_total}){flag}')
+            print(f'    spillover table (non-anchor windows added, by their own true class):')
+            for c in args.class_names:
+                sp = aug_stats['spillover_added'][c]
+                if sp:
+                    print(f'      {c}: +{sp}')
+            if aug_stats['example_overlap_check'] is not None:
+                chk = aug_stats['example_overlap_check']
+                print(f'    example overlap-consistency check (first segment, adjacent augmented windows): '
+                      f'exact_match={chk["exact_match"]} max_abs_diff={chk["max_abs_diff"]:.3g}')
+
         X_train, X_val = X_train[:, :, 1:], X_val[:, :, 1:]
+
+        val_counts   = np.bincount(y_val.astype(int),   minlength=args.nb_classes)
+        train_counts = np.bincount(y_train.astype(int), minlength=args.nb_classes)
+        print(f'  Subject: {args.subjects[int(sbj)]}')
+        print(f'  Windows — train: {len(y_train)}, val: {len(y_val)}')
+        print(f'  Val   per-class: { {args.class_names[c]: int(val_counts[c])   for c in range(args.nb_classes)} }')
+        print(f'  Train per-class: { {args.class_names[c]: int(train_counts[c]) for c in range(args.nb_classes)} }')
 
         args.window_size = X_train.shape[1]
         args.nb_channels = X_train.shape[2]
@@ -146,7 +225,7 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         elif args.network == 'shallow_deepconvlstm':     
             net = ShallowDeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
         elif args.network == 'tinyhar':
-            net = TinyHAR_Model(
+            _tinyhar = TinyHAR_Model(
                 input_shape=(1, 1, args.window_size, args.nb_channels),
                 number_class=args.nb_classes,
                 filter_num=args.filter_num,
@@ -155,6 +234,7 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                 temporal_info_interaction_type=args.temporal_info_interaction_type,
                 temporal_info_aggregation_type=args.temporal_info_aggregation_type
             )
+            net = TinyHARWrapper(_tinyhar)
         elif args.network == 'tinierhar':
             _tinierhar = TinierHAR_Model(
                 input_shape=(1, 1, args.window_size, args.nb_channels),
@@ -185,6 +265,8 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                 filter_sizes=args.filter_sizes,
                 branch_filters=args.branch_filters,
                 nb_units_gru_ic=args.nb_units_gru_ic,
+                use_channel_affine=args.use_channel_affine,
+                branch_dilations=args.branch_dilations,
             )
         else:
             print("Did not provide a valid network name!")
@@ -222,6 +304,20 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
             else:
                 p_name = os.path.join(log_dir, "predictions_best_{}_{}.csv".format(args.subjects[int(sbj)], str(args.name)))
             pd.DataFrame(val_output).to_csv(p_name)
+
+        if args.save_val_npz:
+            print('Saving per-window val predictions (npz)...')
+            # augmentation runs get an _aug<mult><recipe> suffix so their filename does NOT match
+            # learning_curve_plot.py's parse_pred_filename (which only recognizes a bare float or
+            # seed<N> as the last underscore-token) -- this makes discover_npz's recursive
+            # --log_root scan skip these files by construction instead of silently colliding with
+            # a subsample_fraction=1.0 baseline run on the (fold, fraction, seed) key.
+            aug_suffix = (
+                f"_aug{args.augment_multiplier}{args.augment_recipe}" if args.augment_classes else ""
+            )
+            npz_name = os.path.join(log_dir, "preds_{}_{}_seed{}{}.npz".format(
+                args.subjects[int(sbj)], args.subsample_fraction, args.seed, aug_suffix))
+            np.savez(npz_name, y_pred=val_output[:, 0].astype(int), y_true=val_output[:, 1].astype(int))
 
         if all_val_output is None:
             all_train_output = train_output
@@ -412,7 +508,7 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
     elif args.network == 'shallow_deepconvlstm':     
             net = ShallowDeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
     elif args.network == 'tinyhar':
-        net = TinyHAR_Model(
+        _tinyhar = TinyHAR_Model(
             input_shape=(1, 1, args.window_size, args.nb_channels),
             number_class=args.nb_classes,
             filter_num=args.filter_num,
@@ -421,6 +517,7 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
             temporal_info_interaction_type=args.temporal_info_interaction_type,
             temporal_info_aggregation_type=args.temporal_info_aggregation_type
         )
+        net = TinyHARWrapper(_tinyhar)
     elif args.network == 'tinierhar':
         _tinierhar = TinierHAR_Model(
             input_shape=(1, 1, args.window_size, args.nb_channels),
@@ -451,6 +548,8 @@ def train_valid_split(train_data, valid_data, args, log_dir=None, run=None):
             filter_sizes=args.filter_sizes,
             branch_filters=args.branch_filters,
             nb_units_gru_ic=args.nb_units_gru_ic,
+            use_channel_affine=args.use_channel_affine,
+            branch_dilations=args.branch_dilations,
         )
     else:
         print("Did not provide a valid network name!")

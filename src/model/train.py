@@ -24,6 +24,18 @@ from misc.osutils import mkdir_if_missing
 from misc.torchutils import count_parameters, seed_worker
 import wandb
 
+class TinyHARWrapper(nn.Module):
+    """Wraps TinyHAR to handle input shape: (B, T, C) -> (B, 1, T, C)"""
+    use_fixup = False  # required by init_weights in train.py
+    
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x):
+        x = x.unsqueeze(1)  # (B, T, C) -> (B, 1, T, C)
+        return self.model(x)
+
 def init_weights(network, weight_init):
     """
     Weight initialization of network (initialises all LSTM, Conv2D and Linear layers according to weight_init parameter
@@ -245,6 +257,22 @@ def init_scheduler(optimizer, config):
         return None
     return scheduler
 
+def print_weight_summary(config, scheme, present_labels, all_class_weights):
+    """
+    Print the per-class weight vector actually applied to the loss this fold:
+    scheme name, cap value if any, and class_name: weight (absent classes marked).
+    """
+    present = set(int(l) for l in present_labels)
+    cap_str = f" cap={config['weight_cap']}" if scheme == "capped" else ""
+    exp_str = f" exponent={config['weight_exponent']}" if scheme == "power_inverse" else ""
+    print(f"\n[weight_scheme={scheme}{cap_str}{exp_str}]")
+    class_names = config["class_names"]
+    for i in range(config["nb_classes"]):
+        w = float(all_class_weights[i])
+        tag = "" if i in present else " (absent from fold)"
+        print(f"  {class_names[i]}: {w:.4f}{tag}")
+
+
 def train(train_features, train_labels, val_features, val_labels, network, optimizer, loss, config, name=None, run=None, lr_scheduler=None,
 ):
     """
@@ -291,7 +319,8 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
     network.train()
 
     # if weighted loss chosen, calculate weights based on training dataset; else each class is weighted equally
-    if config["weighted"]:
+    scheme = config["weight_scheme"]
+    if scheme == "inverse":
         all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
         class_weights = torch.from_numpy(
             compute_class_weight(
@@ -306,7 +335,8 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
 
         print("Applied weighted class weights: ")
         print(class_weights)
-    else:
+        print_weight_summary(config, scheme, np.unique(train_labels), all_class_weights)
+    elif scheme == "none":
         all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
         class_weights = torch.from_numpy(
             compute_class_weight(None, classes=np.unique(train_labels + 1), y=train_labels + 1)
@@ -315,6 +345,39 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
             all_class_weights[int(lbl)] = class_weights[i]
         if config["loss"] == "cross_entropy":
             loss.weight = all_class_weights.to(device)
+    elif scheme in ("sqrt_inverse", "capped"):
+        all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
+        balanced_weights = compute_class_weight(
+            "balanced", classes=np.unique(train_labels + 1), y=train_labels + 1
+        )
+        if scheme == "sqrt_inverse":
+            derived_weights = np.sqrt(balanced_weights)
+            derived_weights = derived_weights / derived_weights.mean()
+        else:  # capped -- clip the ceiling to floor * RATIO (floor = the fold's smallest
+               # balanced weight, i.e. the most-frequent class), then renormalize to mean 1
+            floor = balanced_weights.min()
+            ceiling = floor * config["weight_cap"]
+            derived_weights = np.minimum(balanced_weights, ceiling)
+            derived_weights = derived_weights / derived_weights.mean()
+        class_weights = torch.from_numpy(derived_weights).float()
+        for i, lbl in enumerate(np.unique(train_labels)):
+            all_class_weights[int(lbl)] = class_weights[i]
+        if config["loss"] == "cross_entropy":
+            loss.weight = all_class_weights.to(device)
+        print_weight_summary(config, scheme, np.unique(train_labels), all_class_weights)
+    elif scheme == "power_inverse":
+        all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
+        present_labels, class_counts = np.unique(train_labels, return_counts=True)
+        derived_weights = (1.0 / class_counts) ** config["weight_exponent"]
+        derived_weights = derived_weights / derived_weights.mean()
+        class_weights = torch.from_numpy(derived_weights).float()
+        for i, lbl in enumerate(present_labels):
+            all_class_weights[int(lbl)] = class_weights[i]
+        if config["loss"] == "cross_entropy":
+            loss.weight = all_class_weights.to(device)
+        print_weight_summary(config, scheme, present_labels, all_class_weights)
+    else:
+        raise ValueError(f"Unknown weight_scheme: {scheme!r}")
 
     # initialize optimizer and loss
     opt, criterion = optimizer, loss
