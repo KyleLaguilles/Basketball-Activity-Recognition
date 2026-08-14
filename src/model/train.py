@@ -261,6 +261,15 @@ def print_weight_summary(config, scheme, present_labels, all_class_weights):
     """
     Print the per-class weight vector actually applied to the loss this fold:
     scheme name, cap value if any, and class_name: weight (absent classes marked).
+
+    Sum-normalized class weights: for sqrt_inverse/capped/power_inverse, weights
+    are rescaled to mean 1 (sum == nb_classes) before printing. Changing one
+    class's support shifts every other class's printed weight too, since they
+    all share the same fixed budget -- comparing a single class's weight across
+    two runs is not meaningful on its own. To check that subsampling recomputed
+    weights correctly, compare the RATIO of two classes' weights (one touched,
+    one untouched) across runs -- that ratio-of-ratios cancels the normalization
+    and isolates the actual frequency-driven change.
     """
     present = set(int(l) for l in present_labels)
     cap_str = f" cap={config['weight_cap']}" if scheme == "capped" else ""
@@ -271,6 +280,57 @@ def print_weight_summary(config, scheme, present_labels, all_class_weights):
         w = float(all_class_weights[i])
         tag = "" if i in present else " (absent from fold)"
         print(f"  {class_names[i]}: {w:.4f}{tag}")
+
+
+def pinned_weight_labels(train_labels, config):
+    """
+    Return the label array the class-weight formula should be derived from.
+
+    Default (--pin_weights_to_pre_augmentation off): returns `train_labels` itself, so every
+    weight scheme sees exactly the array it always saw and results are unchanged.
+
+    With the flag on: rebuilds a synthetic label array from the PRE-augmentation per-class
+    counts recorded by cross_participant_cv (args.pre_aug_train_counts, set in
+    model/validation.py right before augment_training_windows runs) and returns that instead.
+    The augmented windows still train the network -- only the loss weights are pinned, which
+    is the point: it separates "the target class got more data" from "the target class got a
+    smaller weight because it now has more data", two effects that move together by default.
+
+    Reconstructing labels rather than short-circuiting the formula keeps the existing
+    compute_class_weight call untouched. This is exact, not an approximation, for
+    sqrt_inverse: balanced weights are N/(K*n_c), and the subsequent division by the mean
+    cancels the shared N/K factor, so only the relative counts n_c survive -- identical to
+    what the fold would have produced had augmentation never run.
+
+    :param train_labels: numpy array, the actual (post-augmentation) training labels
+    :param config: dict, general setting dictionary
+    :return: numpy array, labels to derive class weights from
+    """
+    if not config.get("pin_weights_to_pre_augmentation", False):
+        return train_labels
+
+    pre_counts = config.get("pre_aug_train_counts")
+    if pre_counts is None:
+        print("\n[pin_weights_to_pre_augmentation] ON, but no augmentation ran on this fold -- "
+              "pre- and post-augmentation counts are identical, so pinning is a no-op here.")
+        return train_labels
+
+    pre_counts = np.asarray(pre_counts, dtype=np.int64)
+    post_counts = np.bincount(train_labels.astype(int), minlength=len(pre_counts))
+    pinned = np.repeat(np.arange(len(pre_counts)), pre_counts).astype(train_labels.dtype)
+
+    class_names = config["class_names"]
+    print("\n[pin_weights_to_pre_augmentation] ON -- class weights derived from PRE-augmentation "
+          "counts; the augmented windows still train the network.")
+    print(f"  train windows used for weights: {int(pre_counts.sum())} "
+          f"(actual training set: {int(post_counts.sum())})")
+    print(f"  {'class':<20} {'pre-aug':>10} {'post-aug':>10} {'delta':>10}")
+    for c in range(len(pre_counts)):
+        delta = int(post_counts[c]) - int(pre_counts[c])
+        print(f"  {class_names[c]:<20} {int(pre_counts[c]):>10} {int(post_counts[c]):>10} "
+              f"{delta:>+10}")
+
+    return pinned
 
 
 def train(train_features, train_labels, val_features, val_labels, network, optimizer, loss, config, name=None, run=None, lr_scheduler=None,
@@ -320,6 +380,10 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
 
     # if weighted loss chosen, calculate weights based on training dataset; else each class is weighted equally
     scheme = config["weight_scheme"]
+    if config.get("pin_weights_to_pre_augmentation", False) and scheme not in ("sqrt_inverse", "capped"):
+        print(f"\n[pin_weights_to_pre_augmentation] WARNING: flag is set but weight_scheme={scheme!r} -- "
+              "pinning is only implemented for sqrt_inverse/capped and is being IGNORED. Weights below "
+              "are derived from the post-augmentation counts as usual.")
     if scheme == "inverse":
         all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
         class_weights = torch.from_numpy(
@@ -347,8 +411,10 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
             loss.weight = all_class_weights.to(device)
     elif scheme in ("sqrt_inverse", "capped"):
         all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
+        # identical to train_labels unless --pin_weights_to_pre_augmentation is set
+        weight_labels = pinned_weight_labels(train_labels, config)
         balanced_weights = compute_class_weight(
-            "balanced", classes=np.unique(train_labels + 1), y=train_labels + 1
+            "balanced", classes=np.unique(weight_labels + 1), y=weight_labels + 1
         )
         if scheme == "sqrt_inverse":
             derived_weights = np.sqrt(balanced_weights)
@@ -360,11 +426,11 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
             derived_weights = np.minimum(balanced_weights, ceiling)
             derived_weights = derived_weights / derived_weights.mean()
         class_weights = torch.from_numpy(derived_weights).float()
-        for i, lbl in enumerate(np.unique(train_labels)):
+        for i, lbl in enumerate(np.unique(weight_labels)):
             all_class_weights[int(lbl)] = class_weights[i]
         if config["loss"] == "cross_entropy":
             loss.weight = all_class_weights.to(device)
-        print_weight_summary(config, scheme, np.unique(train_labels), all_class_weights)
+        print_weight_summary(config, scheme, np.unique(weight_labels), all_class_weights)
     elif scheme == "power_inverse":
         all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
         present_labels, class_counts = np.unique(train_labels, return_counts=True)

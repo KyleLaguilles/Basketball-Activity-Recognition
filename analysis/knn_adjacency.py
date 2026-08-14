@@ -35,10 +35,13 @@ individually, and any fold below the threshold is a hard fail.
 
 WHICH WINDOWS. onset_test.py pools seeds 1/2/3 over the same 214 rebound windows, so
 its "no lead-in / pred running" count of 109 counts (window, seed) pairs, not 109
-distinct windows. Only seed 1's checkpoints exist, so only seed 1 defines an
-embedding space, and the target set here is the SEED-1 SLICE of that pooled 109 --
-expected around a third of it. The count is asserted to lie in [--min_targets,
---max_targets] (default [25, 50]) and printed; it is not asserted to equal 109.
+distinct windows. One seed's weights define one embedding space, so this script
+analyses ONE SEED AT A TIME and its target set is that seed's slice of the pooled 109
+-- expected around a third of it. The seed is not a flag: it is read off
+--baseline_dir, which must name one of window_purity.BASELINE_DIRS, and it must agree
+with the checkpoint run's own cfg["seed"]. The count is asserted to lie in
+[--min_targets, --max_targets] (default [25, 50]) and printed; it is not asserted to
+equal 109.
 
 RECONSTRUCTION IS NOT REIMPLEMENTED. window_purity.py's certified pipeline is
 imported and called: load_labels -> build_candidate_windows -> resolve_and_certify ->
@@ -82,13 +85,6 @@ REBOUND, RUNNING = 3, 6
 EMBED_DIM_EXPECTED = 128
 POOLED_ONSET_COUNT = 109  # onset_test.py's 3-seed pooled "no lead-in / pred running" count
 MAX_DISAGREE_PRINT = 50   # per fold, in Step A
-
-# resolve_and_certify indexes npz_paths by BASELINE_DIRS[0] and attach_predictions
-# maps that same key through SEED_OF_DIR to name the prediction column. Handing our
-# own discovered paths in under that key is the shim: it reuses both functions
-# unmodified and yields the seed-1 column this analysis wants.
-SHIM_KEY = wp.BASELINE_DIRS[0]
-PRED_COL = f"pred_seed{wp.SEED_OF_DIR[SHIM_KEY]}"
 
 
 def fail(msg):
@@ -149,6 +145,31 @@ def discover_checkpoints(ckpt_dir):
                  f"{[os.path.basename(h) for h in hits]}")
         found[fold] = hits[0]
     return found
+
+
+def resolve_baseline_seed(baseline_dir):
+    """
+    Work out which seed --baseline_dir holds, from its name.
+
+    window_purity.BASELINE_DIRS lists the three baseline run dirs in seed order and
+    SEED_OF_DIR maps each to its seed. Matching on basename (not the full path) lets
+    the run tree live anywhere -- a tarball, a scratch dir, the cluster -- while still
+    refusing anything window_purity does not know about.
+
+    A dir outside that list is a hard fail rather than a guess: the seed drives which
+    prediction column the entire analysis reads, so an unrecognized name has no safe
+    default. Returns (shim_key, seed, pred_col).
+    """
+    want = os.path.basename(os.path.normpath(baseline_dir))
+    for d in wp.BASELINE_DIRS:
+        if os.path.basename(d) == want:
+            seed = wp.SEED_OF_DIR[d]
+            return d, seed, f"pred_seed{seed}"
+
+    known = ", ".join(f"{os.path.basename(d)} (seed {wp.SEED_OF_DIR[d]})" for d in wp.BASELINE_DIRS)
+    fail(f"--baseline_dir basename {want!r} is not one of window_purity.py's known baseline "
+         f"run dirs: {known}. The seed cannot be determined, and resolve_and_certify would "
+         "not accept the run either.")
 
 
 def load_checkpoint(path):
@@ -375,11 +396,12 @@ def main():
         fail(f"--data_dir basename must be 'data' (preprocess_data.py joins a literal 'data/'), got: {data_dir}")
 
     cfg, cfg_path = load_cfg(ckpt_dir)
+    shim_key, seed, pred_col = resolve_baseline_seed(baseline_dir)
     npz_paths = discover_fold_npz(baseline_dir, args.npz_pattern)
     ckpt_paths = discover_checkpoints(ckpt_dir)
 
     print("=" * 100)
-    print("k-NN ADJACENCY IN 128-d STAGE 1 FEATURE SPACE -- loso_G, 5 folds, seed 1, CPU only")
+    print(f"k-NN ADJACENCY IN 128-d STAGE 1 FEATURE SPACE -- loso_G, 5 folds, seed {seed}, CPU only")
     print("=" * 100)
     print("\nFILES LOADED (absolute paths):")
     print(f"  cfg            {cfg_path}")
@@ -390,20 +412,41 @@ def main():
     for fold in wp.EXPECTED_FOLDS:
         print(f"  npz   {fold}   {npz_paths[fold]}")
 
-    print(f"\n  network={cfg['network']}  seed={cfg['seed']}  batch_size={cfg['batch_size']}  "
+    print(f"\n  baseline dir -> seed {seed}   prediction column: {pred_col}")
+    print(f"  network={cfg['network']}  cfg seed={cfg['seed']}  batch_size={cfg['batch_size']}  "
           f"valid_epoch={cfg['valid_epoch']}  subsample_fraction={cfg['subsample_fraction']}")
     if cfg["network"] != "inceptioncontext":
         fail(f"cfg network is {cfg['network']!r}, not 'inceptioncontext'; the Stage 1 hook does not apply")
     if cfg["augment_classes"]:
         fail(f"the checkpoint run is an augmentation run (augment_classes={cfg['augment_classes']}); "
              "it is not comparable to the baseline npz")
+    # The checkpoints supply the embedding space and the baseline npz supplies the
+    # predictions that select the target windows. If they come from different seeds,
+    # the analysis silently reads one seed's errors against another seed's geometry.
+    if cfg["seed"] != seed:
+        fail(f"seed mismatch: --ckpt_dir was trained with seed {cfg['seed']} but --baseline_dir "
+             f"({os.path.basename(baseline_dir)}) holds seed {seed} predictions. The embedding space "
+             "and the target set would come from different models.")
 
     # ---- reconstruction, reused wholesale from window_purity.py -----------------
     labels_df = wp.load_labels(labels_path)
     candidates = wp.build_candidate_windows(labels_df)
-    shimmed = {SHIM_KEY: npz_paths}                       # see SHIM_KEY comment
-    resolved = wp.resolve_and_certify(shimmed, candidates)
-    table = wp.attach_predictions(wp.build_window_table(resolved), shimmed, resolved)
+
+    # The two functions read this dict's key differently, so they get different keys.
+    # resolve_and_certify (window_purity.py:166) hardcodes npz_paths[BASELINE_DIRS[0]]
+    # and ignores whatever key we choose, so it MUST be handed the index-0 key or it
+    # raises KeyError. That is sound for any seed: it only reads y_true to brute-force
+    # fold -> subject, and y_true is byte-identical across the three seed dirs
+    # (window_purity.py:19-20). attach_predictions instead maps our key through
+    # SEED_OF_DIR to name the column, so it gets the key for the seed actually passed
+    # -- and it re-asserts y_true per fold, so if that invariance ever broke it would
+    # hard-fail there rather than mislabel the column.
+    resolved = wp.resolve_and_certify({wp.BASELINE_DIRS[0]: npz_paths}, candidates)
+    table = wp.attach_predictions(
+        wp.build_window_table(resolved), {shim_key: npz_paths}, resolved)
+    if pred_col not in table.columns:
+        fail(f"attach_predictions produced {sorted(c for c in table.columns if c.startswith('pred_'))}, "
+             f"not the expected {pred_col}")
 
     folds = sorted(resolved)                              # build_window_table's row order
     print(f"\n  reconstruction certified: {len(folds)} folds, {len(table)} pooled val windows")
@@ -527,7 +570,7 @@ def main():
         fail("embedding row order does not match the window table's fold order")
 
     all_y_true = table["last_label"].to_numpy().astype(int)
-    all_y_pred = table[PRED_COL].to_numpy().astype(int)   # baseline npz predictions
+    all_y_pred = table[pred_col].to_numpy().astype(int)   # baseline npz predictions, this seed
 
     npz_total = 0
     for f in folds:
@@ -558,7 +601,7 @@ def main():
     # STEP C -- the pure-interior rebound windows
     # =========================================================================== #
     print("\n" + "=" * 100)
-    print("[C] TARGET SET -- pure-interior rebound windows predicted running (seed 1)")
+    print(f"[C] TARGET SET -- pure-interior rebound windows predicted running (seed {seed})")
     print("=" * 100)
 
     purity = table["purity"].to_numpy()
@@ -596,14 +639,15 @@ def main():
     n_pure = int((is_reb & (purity == 1.0)).sum())
     print(f"\n  rebound-labeled val windows:                    {int(is_reb.sum())}")
     print(f"  of those, purity == 1.0 (pure-interior):        {n_pure}   <- the whole universe, all seeds")
-    print(f"  of those, predicted running by seed 1:          {n_targets}   <- the target set")
+    print(f"  of those, predicted running by seed {seed}:          {n_targets}   <- the target set")
     print(f"\n  cross-check by re-walking the per-sample label sequences (onset_test.py's")
     print(f"  lead_in_class == -1 encoding, derived from labels_df rather than the")
     print(f"  histogram columns): agrees ({len(xcheck)})")
-    print(f"\n  This is the SEED-1 SLICE of onset_test.py's pooled count of {POOLED_ONSET_COUNT}.")
+    print(f"\n  This is the SEED-{seed} SLICE of onset_test.py's pooled count of {POOLED_ONSET_COUNT}.")
     print(f"  That {POOLED_ONSET_COUNT} pools seeds 1/2/3 over the same 214 rebound windows, so it counts")
-    print("  (window, seed) pairs rather than distinct windows. Only seed 1 has checkpoints, so only")
-    print(f"  seed 1 defines an embedding space; {n_targets} is the expected order of magnitude, not a shortfall.")
+    print("  (window, seed) pairs rather than distinct windows. One seed's weights define one")
+    print(f"  embedding space, so only seed {seed} is analysed here; {n_targets} is the expected order of")
+    print("  magnitude, not a shortfall. Run the other two baseline dirs to cover the rest.")
 
     if not (args.min_targets <= n_targets <= args.max_targets):
         fail(f"target count {n_targets} outside the expected range "
@@ -695,10 +739,12 @@ def main():
      or merge clusters that the 128-d metric does not, so a plot could contradict
      this table without either being wrong.
 
-  3. SEED-1 SLICE. The target set is seed 1's share of onset_test.py's pooled count of
-     {pooled}, which counts (window, seed) pairs across seeds 1/2/3. Only seed 1 has
-     checkpoints, and only one seed's weights define one embedding space. The other
-     seeds' errors fall on overlapping but not identical windows.
+  3. SINGLE-SEED SLICE. The target set is seed {seed}'s share of onset_test.py's pooled
+     count of {pooled}, which counts (window, seed) pairs across seeds 1/2/3. Only one
+     seed's weights define one embedding space, so this run says nothing about the
+     other two: their errors fall on overlapping but not identical windows, and their
+     Stage 1 geometry is a different space that this one's distances cannot be
+     compared against. Point --baseline_dir and --ckpt_dir at another seed to cover it.
 
   4. CONTROLS ARE THE READ. A high running-neighbor fraction for the target windows is
      only informative relative to the correct-rebound control. If the two groups do
@@ -708,7 +754,7 @@ def main():
      {gpu}. Step A's disagreements are near-tie softmax flips, not evidence of a wrong
      checkpoint. Selection above uses the BASELINE npz predictions throughout, so the
      target set is exactly the one onset_test.py analysed.
-""".format(pooled=POOLED_ONSET_COUNT, gpu=cfg["gpu"]))
+""".format(pooled=POOLED_ONSET_COUNT, gpu=cfg["gpu"], seed=seed))
 
 
 if __name__ == "__main__":

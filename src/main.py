@@ -259,6 +259,14 @@ if __name__ == '__main__':
                          help='Required iff --weight_scheme capped: max/min balanced-weight ratio allowed after capping.')
     parser.add_argument('--weight_exponent', default=0.5, type=float,
                          help='Exponent for --weight_scheme power_inverse: class_weights = (1/class_counts) ** exponent.')
+    parser.add_argument('--pin_weights_to_pre_augmentation', default=False, action='store_true',
+                         help='Derive class weights from the PRE-augmentation training counts instead of '
+                              'the post-augmentation ones. Augmentation still runs and the training set '
+                              'still grows -- only the loss weights are pinned. Isolates the augmentation '
+                              'effect from the weight confound (a target class gets more windows AND a '
+                              'smaller weight, so the two changes are entangled by default). Applies to '
+                              '--weight_scheme sqrt_inverse/capped only; ignored (with a warning) for the '
+                              'other schemes, and a no-op on folds where no augmentation ran.')
     parser.add_argument('--shuffling', default=SHUFFLING, action='store_true')
     parser.add_argument('--adj_lr', default=ADJ_LR, action='store_true')
     parser.add_argument('--lr_scheduler', default=LR_SCHEDULER, type=str)
