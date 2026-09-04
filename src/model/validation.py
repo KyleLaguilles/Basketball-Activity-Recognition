@@ -162,14 +162,8 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         # onto augmented copies. Eval (X_val, y_val) is never touched here. Segment-level (not
         # per-window) because batch = context for this repo's context-aware networks -- see
         # data_processing/augmentation.py's module docstring.
-        # reset per fold: train() reads this to pin loss weights to the pre-augmentation counts
-        # (--pin_weights_to_pre_augmentation). None means "no augmentation ran on this fold", in
-        # which case pinning is a no-op since pre- and post-augmentation counts are identical.
-        args.pre_aug_train_counts = None
-
         if args.augment_classes:
             aug_counts_pre = np.bincount(y_train.astype(int), minlength=args.nb_classes)
-            args.pre_aug_train_counts = aug_counts_pre
             n_before = len(y_train)
             n_subject_splices_baseline = max(0, len(np.unique(X_train[:, 0, 0])) - 1)
 

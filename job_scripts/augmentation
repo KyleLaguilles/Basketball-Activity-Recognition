@@ -82,3 +82,11 @@ python src/main.py --network inceptioncontext --test_type subset_specific --test
   --augment_classes rebound,layup --augment_multiplier 8 --augment_recipe rotate --augment_context_k 2 --augment_seed 1 \
   --epochs 40 --seed 1 --save_val_npz --name aug_m8_rotate_seed1_e40 &
 wait
+
+
+python analysis/knn_adjacency.py \
+    --ckpt_dir     logs/subset_specific/loso_G/inceptioncontext/2026-08-14_07-23-55_lc_frac1.0_ckpt_3 \
+    --baseline_dir logs/subset_specific/loso_G/inceptioncontext/2026-07-17_11-15-03 \
+    --labels_path  labels_export.csv.gz \
+    --data_dir     data \
+    > logs/knn_seed3.txt 2>&1

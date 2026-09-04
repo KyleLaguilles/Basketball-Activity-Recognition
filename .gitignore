@@ -1,5 +1,6 @@
 logs
 data
+!data/seam_map.json
 .idea
 results/
 
