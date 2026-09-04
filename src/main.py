@@ -202,6 +202,13 @@ def main(args):
     else:
         print("Split datasets with size: | train {0} | valid {1} |".format(train.shape, valid.shape))
 
+    if args.dense and valid is not None:
+        raise ValueError(
+            f"--dense requires a LOSO test case (valid is None); test_type={args.test_type!r} "
+            f"test_case={args.test_case!r} produced an explicit validation split, which the "
+            "dense path does not implement."
+        )
+
     if valid is None:
         _ = cross_participant_cv(train, args, log_dir, run)
     else:
@@ -330,6 +337,29 @@ if __name__ == '__main__':
     parser.add_argument('--save_checkpoints', default=SAVE_CHECKPOINTS, action='store_true')
     parser.add_argument('--save_analysis', default=SAVE_ANALYSIS, action='store_true')
 
+    # DENSE (PER-SAMPLE) PREDICTION OPTIONS (default-off; no effect unless --dense is set)
+    parser.add_argument('--dense', default=False, action='store_true',
+                         help='Dense per-sample prediction: seam-free sequences instead of sliding '
+                              'windows, and one label per timestep instead of one per window. '
+                              'Bypasses apply_sliding_window entirely (its last-sample rule at '
+                              'sliding_window.py:117 is the artifact this path removes) and reads '
+                              'data/seam_map.json so no sequence spans a recording splice. '
+                              'Currently implemented for --network inceptioncontext and LOSO '
+                              'test cases only.')
+    parser.add_argument('--dense_seq_len', default=500, type=int,
+                         help='--dense sequence length in samples (500 = 10 s at 50 Hz).')
+    parser.add_argument('--dense_overlap', default=0.5, type=float,
+                         help='--dense overlap fraction between consecutive sequences cut from '
+                              'one contiguous segment.')
+    parser.add_argument('--dense_min_seg', default=25, type=int,
+                         help='--dense discards contiguous segments shorter than this many '
+                              'samples. The shortest seam-free segment in the dataset is 31 '
+                              'samples, so the default discards nothing; raising it to 50 drops '
+                              '582 samples (0.042%% of the dataset but 2.31%% of all rebound '
+                              'samples), which is why 50 is not the default.')
+    parser.add_argument('--dense_seam_map', default='data/seam_map.json', type=str,
+                         help='Path to the seam map built by scripts/build_seam_map.py.')
+
     args = parser.parse_args()
 
     # resolve --weighted / --weight_scheme into a single args.weight_scheme; hard-error on contradictions
@@ -367,5 +397,31 @@ if __name__ == '__main__':
         parser.error(f"--augment_multiplier must be >= 1 (got {args.augment_multiplier!r}).")
     if args.augment_classes and args.augment_context_k < 0:
         parser.error(f"--augment_context_k must be >= 0 (got {args.augment_context_k!r}).")
+
+    # --dense compatibility: fail loudly rather than silently ignoring a flag. The dense
+    # head only exists on InceptionContext, and subsampling/augmentation both operate on
+    # windows carrying the subject-id column (subsampling.py / augmentation.py read
+    # X_train[:, :, 0]), which dense sequences do not have.
+    if args.dense:
+        if args.network != 'inceptioncontext':
+            parser.error(f"--dense is implemented for --network inceptioncontext only "
+                         f"(got {args.network!r}).")
+        if args.loss != 'cross_entropy':
+            parser.error(f"--dense supports --loss cross_entropy only (got {args.loss!r}); "
+                         "the maxup path reshapes logits as (batch, trials, -1), which assumes "
+                         "one label per sample.")
+        if args.dense_seq_len < 1:
+            parser.error(f"--dense_seq_len must be >= 1 (got {args.dense_seq_len!r}).")
+        if not 0.0 <= args.dense_overlap < 1.0:
+            parser.error(f"--dense_overlap must be in [0, 1) (got {args.dense_overlap!r}).")
+        if args.dense_min_seg < 1:
+            parser.error(f"--dense_min_seg must be >= 1 (got {args.dense_min_seg!r}).")
+        if args.subsample_classes and args.subsample_fraction < 1.0:
+            parser.error("--dense does not support --subsample_fraction < 1: subsampling selects "
+                         "whole windows using the subject-id column that dense sequences drop.")
+        if args.augment_classes and args.augment_multiplier > 1:
+            parser.error("--dense does not support --augment_multiplier > 1: augmentation is "
+                         "window- and batch-order-based (see augmentation.py's module docstring) "
+                         "and has no sequence-level equivalent.")
 
     main(args)

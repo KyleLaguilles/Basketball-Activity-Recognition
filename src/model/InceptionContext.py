@@ -99,6 +99,15 @@ class InceptionContext(nn.Module):
             Dilation factor for the temporal conv in each inception branch.
             Must have the same length as filter_sizes. Default (1, 1, 1, 1)
             preserves bit-identical outputs to the undilated baseline.
+        dense: bool
+            When True, replace the attention pooling + Stage 2 with a per-timestep
+            head: a bidirectional LSTM over the WITHIN-sequence time axis followed by
+            a linear classifier, returning (B, classes, T) logits for
+            nn.CrossEntropyLoss. Stage 2's context_lstm cannot serve this purpose --
+            it is batch_first=False and reads the minibatch as its sequence axis, so
+            it only ever sees across windows, never within one. Default False leaves
+            the windowed forward path bit-identical: the dense branch returns before
+            any existing line runs, and the dense layers are not even constructed.
     """
 
     def __init__(
@@ -116,6 +125,7 @@ class InceptionContext(nn.Module):
         nb_units_gru_ic=128,
         use_channel_affine=False,
         branch_dilations=(1, 1, 1, 1),
+        dense=False,
     ):
         super().__init__()
 
@@ -164,6 +174,21 @@ class InceptionContext(nn.Module):
         else:
             self.classifier = nn.Linear(lstm_units, classes)
 
+        # --- Dense head: per-timestep classification (replaces Stage 1 pooling + Stage 2) ---
+        # Always bidirectional: a per-sample label benefits from context on both sides, and
+        # the whole point of the dense path is that a rebound's lead-in and follow-through
+        # are both visible. batch_first=True because here the sequence axis really is dim 1.
+        self.dense = dense
+        if dense:
+            self.dense_lstm = nn.LSTM(
+                nb_units_gru_ic,
+                lstm_units,
+                num_layers=1,
+                batch_first=True,
+                bidirectional=True,
+            )
+            self.dense_head = nn.Linear(2 * lstm_units, classes)
+
     def forward(self, x):
         # x: (B, T, C)
         if self.use_channel_affine:
@@ -178,6 +203,14 @@ class InceptionContext(nn.Module):
         x = x.permute(0, 2, 1, 3).reshape(B, T, F * C)      # (B, T, sum_filters*C)
         x = self.dropout(x)
         x, _ = self.gru(x)                                   # (B, T, nb_units_gru_ic)
+
+        if self.dense:
+            # Dense head -- returns before the attention pooling below, which is the module
+            # that collapses T in the windowed path. Nothing after this point runs.
+            x, _ = self.dense_lstm(x)                        # (B, T, 2 * lstm_units)
+            x = self.dense_head(x)                           # (B, T, classes)
+            return x.permute(0, 2, 1)                        # (B, classes, T) for CrossEntropyLoss
+
         attn_weights = torch.softmax(self.gru_attention(x), dim=1)  # (B, T, 1)
         x = torch.sum(attn_weights * x, dim=1)               # (B, nb_units_gru_ic)
 

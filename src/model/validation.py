@@ -89,6 +89,80 @@ def save_composite_confusion_matrix(v_conf_mat, class_names, log_dir, run=None, 
 
     return save_path
 
+def dense_val_plan(data, args, sbj):
+    """
+    Re-derive the validation cutting plan for one fold, in train-array row coordinates.
+
+    Uses sequence_loader's own plan_segment/load_seam_map rather than restating the rule, so
+    this cannot drift from the arrays build_sequences actually produced.
+
+    :return: (entries, kept_rows) where entries is [(start_row, end_row, pad_len)] in emission
+        order and kept_rows is every non-discarded validation row, ascending -- which is
+        exactly the order of build_sequences' val_sample_labels.
+    """
+    from data_processing.sequence_loader import load_seam_map, plan_segment
+
+    segments = load_seam_map(args.dense_seam_map, data)
+    step = int(args.dense_seq_len * (1 - args.dense_overlap))
+
+    entries, kept = [], []
+    for seg in segments:
+        if seg['subject_code'] != int(sbj):
+            continue
+        seg_entries = plan_segment(seg, args.dense_seq_len, step, args.dense_min_seg)
+        if not seg_entries:
+            continue
+        entries.extend(seg_entries)
+        kept.append(np.arange(seg['start_row'], seg['end_row']))
+    return entries, (np.concatenate(kept) if kept else np.empty(0, dtype=int))
+
+
+def stitch_dense_predictions(val_output, entries, kept_rows, n_rows):
+    """
+    Collapse per-timestep predictions onto one prediction per raw sample.
+
+    Overlapping sequences predict the same sample more than once, so the flat array coming out
+    of train() is longer than the timeline: at seq_len=500/overlap=0.5 a fold's 126839 samples
+    arrive as 244488 timesteps. Writing that to the npz would mean every downstream script
+    scored a population that double-counts segment interiors relative to their edges.
+
+    LAST-SEQUENCE-WINS, the same convention sample_level_f1.py:296-311 applies to overlapping
+    windows: sequences are assigned in emission order, so the last one covering a sample sets
+    it. Emission order is preserved end to end -- the val DataLoader is built with
+    shuffle=False (train.py:477-484) and the per-batch padding mask keeps order -- so walking
+    the flat array with a cursor of (end_row - start_row) per sequence is exact.
+
+    :return: (n_kept, 2) array of [y_pred, y_true] in raw stream order, the same layout the
+        windowed path returns.
+    """
+    preds = val_output[:, 0].astype(int)
+    truth = val_output[:, 1].astype(int)
+
+    expected = sum(hi - lo for lo, hi, _pad in entries)
+    if len(preds) != expected:
+        raise ValueError(
+            f"dense stitching: train() returned {len(preds)} timesteps but the re-derived "
+            f"validation plan accounts for {expected}. The plan and the emitted sequences "
+            "disagree; refusing to stitch."
+        )
+
+    stitched_pred = np.full(n_rows, -1, dtype=int)
+    stitched_true = np.full(n_rows, -1, dtype=int)
+    cursor = 0
+    for lo, hi, _pad in entries:
+        real = hi - lo
+        stitched_pred[lo:hi] = preds[cursor:cursor + real]
+        stitched_true[lo:hi] = truth[cursor:cursor + real]
+        cursor += real
+
+    out_pred = stitched_pred[kept_rows]
+    out_true = stitched_true[kept_rows]
+    if (out_pred < 0).any() or (out_true < 0).any():
+        raise ValueError("dense stitching: some kept validation rows were never covered by a "
+                         "sequence, which contradicts the loader's coverage guarantee.")
+    return np.vstack((out_pred, out_true)).T
+
+
 def cross_participant_cv(data, args, log_dir=None, run=None):
     """
     Method to apply cross-participant cross-validation (also known as leave-one-subject-out cross-validation).
@@ -122,25 +196,57 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         val_data = data[data[:, 0] == sbj]
         args.learning_rate = orig_lr
 
-        # Sensor data is segmented using a sliding window mechanism
-        X_train, y_train = apply_sliding_window(train_data[:, :-1], train_data[:, -1],
+        if args.dense:
+            # Dense path: seam-free sequences with one label per timestep. build_sequences
+            # takes the FULL array and does its own fold split on subject_code, which selects
+            # exactly the rows the train_data/val_data masks above select (one seam-map segment
+            # belongs entirely to one subject). apply_sliding_window is bypassed entirely --
+            # its last-sample rule (sliding_window.py:117) is the labeling artifact this path
+            # exists to remove -- and the acc-only channel slice normally applied at the
+            # X_train[:, :, 1:] line below is already done by the loader.
+            from data_processing.sequence_loader import build_sequences
+
+            dense_res = build_sequences(
+                train_array=data,
+                seam_map_path=args.dense_seam_map,
+                val_subject_code=int(sbj),
+                seq_len=args.dense_seq_len,
+                overlap=args.dense_overlap,
+                min_segment_len=args.dense_min_seg,
+            )
+            X_train, y_train = dense_res['X_train'], dense_res['y_train']
+            X_val, y_val = dense_res['X_val'], dense_res['y_val']
+            # Per-sample label streams. Class weights must be derived from these, not from the
+            # padded (N_seq, T) targets -- see train.py's weight block.
+            args.dense_train_sample_labels = dense_res['train_sample_labels']
+            args.dense_val_sample_labels = dense_res['val_sample_labels']
+            dense_entries, dense_kept_rows = dense_val_plan(data, args, sbj)
+            print(f'  Dense sequences  train: {X_train.shape}, val: {X_val.shape} '
+                  f'(seq_len={args.dense_seq_len}, overlap={args.dense_overlap}, '
+                  f'min_segment_len={args.dense_min_seg})')
+            print(f'  Dense samples    train: {dense_res["train_sample_count"]}, '
+                  f'val: {dense_res["val_sample_count"]}, '
+                  f'discarded: {dense_res["discarded_samples"]}')
+        else:
+            # Sensor data is segmented using a sliding window mechanism
+            X_train, y_train = apply_sliding_window(train_data[:, :-1], train_data[:, -1],
+                                                    sliding_window_size=args.sw_length,
+                                                    unit=args.sw_unit,
+                                                    sampling_rate=args.sampling_rate,
+                                                    sliding_window_overlap=args.sw_overlap,
+                                                    )
+
+            X_val, y_val = apply_sliding_window(val_data[:, :-1], val_data[:, -1],
                                                 sliding_window_size=args.sw_length,
                                                 unit=args.sw_unit,
                                                 sampling_rate=args.sampling_rate,
                                                 sliding_window_overlap=args.sw_overlap,
                                                 )
 
-        X_val, y_val = apply_sliding_window(val_data[:, :-1], val_data[:, -1],
-                                            sliding_window_size=args.sw_length,
-                                            unit=args.sw_unit,
-                                            sampling_rate=args.sampling_rate,
-                                            sliding_window_overlap=args.sw_overlap,
-                                            )
-
         # subsample training windows of the targeted classes BEFORE the subject-id column
         # (X_train[:, 0, 0]) is stripped below -- stratification needs it. Eval (X_val, y_val)
         # was windowed independently from val_data above and is never touched here.
-        if args.subsample_classes:
+        if args.subsample_classes and not args.dense:
             train_counts_pre = np.bincount(y_train.astype(int), minlength=args.nb_classes)
             X_train, y_train = subsample_training_windows(
                 X_train, y_train,
@@ -162,7 +268,7 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         # onto augmented copies. Eval (X_val, y_val) is never touched here. Segment-level (not
         # per-window) because batch = context for this repo's context-aware networks -- see
         # data_processing/augmentation.py's module docstring.
-        if args.augment_classes:
+        if args.augment_classes and not args.dense:
             aug_counts_pre = np.bincount(y_train.astype(int), minlength=args.nb_classes)
             n_before = len(y_train)
             n_subject_splices_baseline = max(0, len(np.unique(X_train[:, 0, 0])) - 1)
@@ -203,10 +309,17 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                 print(f'    example overlap-consistency check (first segment, adjacent augmented windows): '
                       f'exact_match={chk["exact_match"]} max_abs_diff={chk["max_abs_diff"]:.3g}')
 
-        X_train, X_val = X_train[:, :, 1:], X_val[:, :, 1:]
+        if not args.dense:
+            X_train, X_val = X_train[:, :, 1:], X_val[:, :, 1:]
 
-        val_counts   = np.bincount(y_val.astype(int),   minlength=args.nb_classes)
-        train_counts = np.bincount(y_train.astype(int), minlength=args.nb_classes)
+        if args.dense:
+            # y_* are (N_seq, T) with ignore_index padding, so np.bincount cannot read them;
+            # count the per-sample label streams instead. Same quantity, one row per sample.
+            val_counts   = np.bincount(args.dense_val_sample_labels,   minlength=args.nb_classes)
+            train_counts = np.bincount(args.dense_train_sample_labels, minlength=args.nb_classes)
+        else:
+            val_counts   = np.bincount(y_val.astype(int),   minlength=args.nb_classes)
+            train_counts = np.bincount(y_train.astype(int), minlength=args.nb_classes)
         print(f'  Subject: {args.subjects[int(sbj)]}')
         print(f'  Windows — train: {len(y_train)}, val: {len(y_val)}')
         print(f'  Val   per-class: { {args.class_names[c]: int(val_counts[c])   for c in range(args.nb_classes)} }')
@@ -267,6 +380,7 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                 nb_units_gru_ic=args.nb_units_gru_ic,
                 use_channel_affine=args.use_channel_affine,
                 branch_dilations=args.branch_dilations,
+                dense=args.dense,
             )
         else:
             print("Did not provide a valid network name!")
@@ -288,6 +402,26 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                                                           network=net, optimizer=opt, loss=loss, lr_scheduler=scheduler,
                                                           config=vars(args), run=run, name='sbj_' + str(int(sbj))
                                                           )
+
+        if args.dense:
+            # One prediction per raw sample, not per (sequence, timestep) -- see
+            # stitch_dense_predictions. Everything below (scores, csv dump, npz dump) then
+            # consumes the same (N, 2) [y_pred, y_true] layout the windowed path produces.
+            n_dense_timesteps = len(val_output)
+            val_output = stitch_dense_predictions(val_output, dense_entries, dense_kept_rows,
+                                                  len(data))
+            print(f'  Dense stitching  {n_dense_timesteps} timesteps -> {len(val_output)} '
+                  f'samples (last-sequence-wins over overlapping sequences)')
+            if len(val_output) != len(args.dense_val_sample_labels):
+                raise ValueError(
+                    f"dense stitching produced {len(val_output)} samples but the loader kept "
+                    f"{len(args.dense_val_sample_labels)}"
+                )
+            if not np.array_equal(val_output[:, 1], args.dense_val_sample_labels.astype(int)):
+                raise ValueError(
+                    "dense stitching: the stitched ground truth does not match the loader's "
+                    "val_sample_labels; the sequence order assumption is violated."
+                )
 
         if args.save_checkpoints:
             print('Saving checkpoint...')

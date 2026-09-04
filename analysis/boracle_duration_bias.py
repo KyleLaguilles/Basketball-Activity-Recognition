@@ -185,6 +185,89 @@ def measure_fold(fold, npz_path, candidates, labels_df, results_dir, win_len, st
     }
 
 
+def measure_fold_dense(fold, npz_path, segments, label_ids, results_dir, min_segment_len):
+    """
+    One dense fold, in SAMPLES. No expansion and no window proxy: the npz already carries one
+    prediction per raw sample, so the estimate is a straight bincount of it and the truth is a
+    straight bincount of the npz's y_true -- itself certified sample for sample against the raw
+    label stream before either is counted.
+    """
+    y_pred, y_true = slf.load_npz(npz_path)
+
+    expected = slf.dense_expected_truth(fold, segments, label_ids, min_segment_len)
+    if len(y_true) != len(expected):
+        fail(f"{results_dir} fold {fold}: npz holds {len(y_true)} samples, the raw stream gives "
+             f"{len(expected)} kept samples at min_segment_len={min_segment_len}")
+    if not np.array_equal(y_true, expected):
+        n_bad = int((y_true != expected).sum())
+        fail(f"{results_dir} fold {fold}: npz y_true differs from the raw per-sample labels at "
+             f"{n_bad} of {len(expected)} samples. Reconstruction not certified.")
+
+    raw_total = sum(s["length"] for s in segments if s["subject_name"] == fold)
+    full = np.concatenate([label_ids[s["start_row"]:s["end_row"]] for s in segments
+                           if s["subject_name"] == fold])
+
+    zeros = np.zeros(N_CLASSES, dtype=np.int64)
+    return {
+        "fold": fold, "subject": fold,
+        "n_samples": int(raw_total), "n_covered": int(len(y_true)), "n_windows": 0,
+        "npz": os.path.basename(npz_path),
+        "raw_sample_true": np.bincount(y_true, minlength=N_CLASSES).astype(np.int64),
+        "window_proxy_true": zeros.copy(),
+        "raw_full_true": np.bincount(full, minlength=N_CLASSES).astype(np.int64),
+        "expansion_est": np.bincount(y_pred, minlength=N_CLASSES).astype(np.int64),
+        "window_count_est": zeros.copy(),
+    }
+
+
+def process_dir_dense(results_dir, labels_df, seam, npz_pattern, allow_partial):
+    """Dense counterpart of process_dir: no windowing to derive, no candidate table to build."""
+    if not os.path.isdir(results_dir):
+        fail(f"--results_dir does not exist or is not a directory: {results_dir}")
+
+    cfg = slf.load_cfg(results_dir)
+    if not cfg.get("dense", False):
+        fail(f"{results_dir}: --dense was passed but this run's cfg.txt has "
+             f"dense={cfg.get('dense')!r}. Refusing to read a windowed npz as per-sample.")
+
+    min_segment_len = int(cfg.get("dense_min_seg", 25))
+    seq_len = int(cfg.get("dense_seq_len", 500))
+    overlap = float(cfg.get("dense_overlap", 0.5))
+    segments = seam["segments"]
+
+    label_ids = labels_df["label_id"].to_numpy().astype(np.int64)
+    if len(label_ids) != seam["total_samples"]:
+        fail(f"labels file holds {len(label_ids)} samples, seam map describes "
+             f"{seam['total_samples']}")
+
+    folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
+    expect = len(folds) if allow_partial else EXPECTED_FOLD_COUNT
+    if not allow_partial and len(folds) != EXPECTED_FOLD_COUNT:
+        fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
+             f"{EXPECTED_FOLD_COUNT}: {folds}. Pass --allow_partial_folds for a smoke test.")
+    npz_paths = slf.discover_fold_npz(results_dir, folds, npz_pattern, expect_count=expect)
+
+    fold_rows = [measure_fold_dense(f, npz_paths[f], segments, label_ids, results_dir,
+                                    min_segment_len)
+                 for f in sorted(npz_paths)]
+
+    totals = {k: np.sum([r[k] for r in fold_rows], axis=0)
+              for k in ("raw_sample_true", "window_proxy_true", "raw_full_true",
+                        "expansion_est", "window_count_est")}
+
+    return {
+        "dir": results_dir, "name": slf.display_name(results_dir), "dense": True,
+        "sw_length": seq_len / SAMPLING_RATE, "sw_overlap": int(round(overlap * 100)),
+        "win_len": seq_len, "step": int(seq_len * (1 - overlap)),
+        "min_segment_len": min_segment_len,
+        "stride_sec": 1.0 / SAMPLING_RATE,
+        "folds": fold_rows, "totals": totals,
+        "n_samples": int(sum(r["n_samples"] for r in fold_rows)),
+        "n_covered": int(sum(r["n_covered"] for r in fold_rows)),
+        "n_windows": 0,
+    }
+
+
 def process_dir(results_dir, labels_df, npz_pattern):
     if not os.path.isdir(results_dir):
         fail(f"--results_dir does not exist or is not a directory: {results_dir}")
@@ -261,9 +344,15 @@ def report_header(rec):
     print("BORACLE DURATION BIAS -- per-class exposure estimates vs ground truth")
     print("=" * 108)
     print(f"\n  run            : {rec['name']}   [{rec['dir']}]")
-    print(f"  windowing      : sw_length={rec['sw_length']}s  sw_overlap={rec['sw_overlap']}%  ->  "
-          f"win_len={rec['win_len']} samples, step={rec['step']} samples, "
-          f"stride={rec['stride_sec']:.4f}s")
+    if rec.get("dense"):
+        print(f"  sequencing     : DENSE, seq_len={rec['win_len']} samples "
+              f"({rec['sw_length']}s), overlap={rec['sw_overlap']}%, "
+              f"min_segment_len={rec['min_segment_len']}")
+        print("                   one prediction per raw sample; no expansion, no window proxy")
+    else:
+        print(f"  windowing      : sw_length={rec['sw_length']}s  sw_overlap={rec['sw_overlap']}%  ->  "
+              f"win_len={rec['win_len']} samples, step={rec['step']} samples, "
+              f"stride={rec['stride_sec']:.4f}s")
     print(f"  sampling rate  : {SAMPLING_RATE} Hz (preprocess_data.py:31; never in cfg.txt)")
     print(f"  duration       : n_samples / {SAMPLING_RATE}")
     print(f"\n  {'fold':<6} {'subject':<8} {'windows':>8} {'samples':>9} {'covered':>9} "
@@ -275,8 +364,13 @@ def report_header(rec):
           f"{rec['n_covered']:>9} {hms(secs(rec['n_covered'])):>12}")
 
     gap = rec["n_samples"] - rec["n_covered"]
-    print(f"\n  Uncovered trailing samples: {gap} ({secs(gap):.2f}s over {EXPECTED_FOLD_COUNT} folds, "
-          f"at most `step`={rec['step']} per fold).")
+    if rec.get("dense"):
+        print(f"\n  Uncovered samples: {gap} ({secs(gap):.2f}s) -- segments shorter than "
+              f"min_segment_len={rec['min_segment_len']}, which the loader discards. "
+              "0 at the default 25.")
+    else:
+        print(f"\n  Uncovered trailing samples: {gap} ({secs(gap):.2f}s over {EXPECTED_FOLD_COUNT} folds, "
+              f"at most `step`={rec['step']} per fold).")
     print("  Every table below scores COVERED samples only, so bias is attributable to")
     print("  misclassification rather than to coverage. The full-raw column in [1] shows what")
     print("  the tail costs -- it is under a second per fold.")
@@ -289,10 +383,16 @@ def report_totals(rec):
     full_sec = secs(t["raw_full_true"])
 
     print("\n" + "=" * 108)
-    print("[1] PER-CLASS TOTAL DURATION -- last-window-wins estimate vs raw-sample truth")
-    print("=" * 108)
-    print("\n  This is the headline pairing: the estimate BOracle would actually consume, against")
-    print("  the raw 50 Hz timeline. bias = est - true. ratio = est / true.\n")
+    if rec.get("dense"):
+        print("[1] PER-CLASS TOTAL DURATION -- per-sample estimate vs raw-sample truth")
+        print("=" * 108)
+        print("\n  Dense: the estimate is a straight count of the per-sample predictions, with no")
+        print("  expansion step between it and the raw 50 Hz timeline. bias = est - true.\n")
+    else:
+        print("[1] PER-CLASS TOTAL DURATION -- last-window-wins estimate vs raw-sample truth")
+        print("=" * 108)
+        print("\n  This is the headline pairing: the estimate BOracle would actually consume, against")
+        print("  the raw 50 Hz timeline. bias = est - true. ratio = est / true.\n")
 
     hdr = (f"  {'class':<12} {'true_sec':>10} {'est_sec':>10} {'bias_sec':>10} {'bias_pct':>9} "
            f"{'ratio':>7} {'dir':>6} {'share':>7} {'full_raw_s':>11}")
@@ -312,6 +412,16 @@ def report_totals(rec):
 
 def report_matrix(rec):
     """(e): the 2x2, and which axis actually moves the numbers."""
+    if rec.get("dense"):
+        print("\n" + "=" * 108)
+        print("[2] THE 2x2 -- not applicable to a dense run")
+        print("=" * 108)
+        print("\n  Both axes of the 2x2 are artifacts of windowing. The estimate axis compares")
+        print("  last-window-wins against window-count x stride; the truth axis compares the raw")
+        print("  timeline against a window-proxy that samples it once per step under the")
+        print("  last-sample rule. A dense run has neither: its estimate IS per-sample and its")
+        print("  truth IS the raw timeline, so [1] carries no measurement-choice caveat at all.")
+        return
     t = rec["totals"]
     print("\n" + "=" * 108)
     print("[2] THE 2x2 -- {estimate rule} x {truth definition}, per-class bias in seconds")
@@ -457,6 +567,25 @@ def report_conservation(rec):
     print("[4] CONSERVATION -- every covered sample carries exactly one prediction")
     print("=" * 108)
 
+    if rec.get("dense"):
+        est, true = int(t["expansion_est"].sum()), int(t["raw_sample_true"].sum())
+        print("\n  Dense: the estimate and the truth are bincounts of two arrays of equal length,")
+        print("  so conservation is exact by construction and is asserted rather than derived.\n")
+        print(f"    sum(per-sample estimate) = {est} samples = {secs(est):.2f}s")
+        print(f"    sum(raw-sample truth)    = {true} samples = {secs(true):.2f}s")
+        print(f"    n_covered                = {rec['n_covered']} samples")
+        if not (est == true == rec["n_covered"]):
+            fail(f"dense conservation failed: est={est} true={true} n_covered={rec['n_covered']}")
+        print("\n  status: MATCHED, exact")
+        print(f"\n  Per-fold:")
+        print(f"    {'fold':<6} {'subject':<8} {'est_sec':>12} {'true_sec':>12} {'delta':>12}")
+        for f in rec["folds"]:
+            e, g = secs(f["expansion_est"]).sum(), secs(f["raw_sample_true"]).sum()
+            if not np.isclose(e, g, rtol=0, atol=1e-9):
+                fail(f"fold {f['fold']}: conservation failed, {e:.6f}s vs {g:.6f}s")
+            print(f"    {f['fold']:<6} {f['subject']:<8} {e:>12.4f} {g:>12.4f} {e - g:>+12.6f}")
+        return
+
     gap_samples = EXPECTED_FOLD_COUNT * (rec["win_len"] - rec["step"])
     print(f"\n  n_covered           = {rec['n_covered']} samples = {secs(rec['n_covered']):.2f}s")
     print(f"  n_windows * step    = {rec['n_windows'] * rec['step']} samples = "
@@ -596,10 +725,23 @@ def main():
                         help="Exported per-sample labels (columns: subject, label), original row order.")
     parser.add_argument("--npz_pattern", default=None,
                         help="Explicit glob containing '{fold}', overriding npz auto-detection.")
+    parser.add_argument("--dense", action="store_true",
+                        help="Read a --dense run: durations come straight from the per-sample "
+                             "predictions, and the window-proxy / window-count legs (table [2]) "
+                             "are skipped because neither exists for a dense run.")
+    parser.add_argument("--seam_map", default="data/seam_map.json",
+                        help="Seam map used by --dense to rebuild each fold's kept-sample stream.")
+    parser.add_argument("--allow_partial_folds", action="store_true",
+                        help="Read a run with fewer than 5 folds (a smoke test).")
     args = parser.parse_args()
 
     labels_df = wp.load_labels(args.labels)
-    rec = process_dir(args.results_dir, labels_df, args.npz_pattern)
+    if args.dense:
+        seam = slf.load_seam_map(args.seam_map)
+        rec = process_dir_dense(args.results_dir, labels_df, seam, args.npz_pattern,
+                                args.allow_partial_folds)
+    else:
+        rec = process_dir(args.results_dir, labels_df, args.npz_pattern)
 
     report_header(rec)
     report_totals(rec)

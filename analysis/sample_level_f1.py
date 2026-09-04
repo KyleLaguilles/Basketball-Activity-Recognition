@@ -201,7 +201,7 @@ def build_candidates(labels_df, win_len, step):
 # npz discovery + certification
 # --------------------------------------------------------------------------- #
 
-def discover_fold_npz(results_dir, folds, pattern=None):
+def discover_fold_npz(results_dir, folds, pattern=None, expect_count=EXPECTED_FOLD_COUNT):
     """
     Map fold token -> npz path, tolerating both of validation.py's naming schemes.
 
@@ -232,8 +232,8 @@ def discover_fold_npz(results_dir, folds, pattern=None):
                  f"{[os.path.basename(h) for h in hits]}. Pass --npz_pattern to disambiguate.")
         found[fold] = hits[0]
 
-    if len(found) != EXPECTED_FOLD_COUNT:
-        fail(f"{results_dir}: resolved {len(found)} folds, expected exactly {EXPECTED_FOLD_COUNT}: "
+    if len(found) != expect_count:
+        fail(f"{results_dir}: resolved {len(found)} folds, expected exactly {expect_count}: "
              f"{sorted(found)}")
     return found
 
@@ -423,6 +423,128 @@ def process_dir(results_dir, labels_df, candidate_cache, npz_pattern):
     }
 
 
+# --------------------------------------------------------------------------- #
+# dense (per-sample) processing
+# --------------------------------------------------------------------------- #
+
+def load_seam_map(path):
+    """The segment map written by scripts/build_seam_map.py, used only in --dense mode."""
+    if not os.path.isfile(path):
+        fail(f"seam map not found at {path!r}. --dense needs it to rebuild the per-sample "
+             "ground truth; build it with scripts/build_seam_map.py.")
+    with open(path) as fid:
+        payload = json.load(fid)
+    for key in ("total_samples", "segments"):
+        if key not in payload:
+            fail(f"{path}: missing key {key!r}")
+    return payload
+
+
+def dense_expected_truth(subject, segments, label_ids, min_segment_len):
+    """
+    The per-sample ground truth a dense fold MUST have produced, rebuilt from the raw label
+    stream: the kept segments of `subject`, concatenated in seam-map (== raw stream) order.
+
+    This is the dense replacement for resolve_fold's certification. It is strictly stronger:
+    the windowed check matched a subject on its last-sample label sequence, one label per 25
+    samples, while this matches every sample. A wrong fold->subject mapping, a wrong
+    min_segment_len, or a different label encoding all fail it.
+    """
+    parts = [label_ids[s["start_row"]:s["end_row"]] for s in segments
+             if s["subject_name"] == subject and s["length"] >= min_segment_len]
+    if not parts:
+        fail(f"seam map holds no kept segments for subject {subject!r} at "
+             f"min_segment_len={min_segment_len}")
+    return np.concatenate(parts).astype(np.int64)
+
+
+def process_dir_dense(results_dir, labels_df, seam, npz_pattern, allow_partial):
+    """
+    Score a --dense run. No fold->subject brute force and no expansion: the npz already holds
+    one prediction per raw sample, in stream order, so the only thing to establish is that its
+    y_true is the subject's raw label stream -- which is exactly what the certification below
+    checks, sample for sample.
+    """
+    if not os.path.isdir(results_dir):
+        fail(f"--results_dir does not exist or is not a directory: {results_dir}")
+
+    cfg = load_cfg(results_dir)
+    if not cfg.get("dense", False):
+        fail(f"{results_dir}: --dense was passed but this run's cfg.txt has dense={cfg.get('dense')!r}. "
+             "Scoring a windowed run as dense would compare a per-window array against a "
+             "per-sample timeline; refusing.")
+
+    min_segment_len = int(cfg.get("dense_min_seg", 25))
+    seq_len = int(cfg.get("dense_seq_len", 500))
+    segments = seam["segments"]
+
+    label_ids = labels_df["label_id"].to_numpy().astype(np.int64)
+    if len(label_ids) != seam["total_samples"]:
+        fail(f"labels file holds {len(label_ids)} samples, seam map describes "
+             f"{seam['total_samples']}. They must be the same stream in the same order.")
+    subj_col = labels_df["subject"].to_numpy()
+    for seg in segments:
+        if subj_col[seg["start_row"]] != seg["subject_name"]:
+            fail(f"seam map segment at row {seg['start_row']} says subject "
+                 f"{seg['subject_name']!r} but the labels file says "
+                 f"{subj_col[seg['start_row']]!r}; the two are not aligned.")
+
+    folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
+    expect = len(folds) if allow_partial else EXPECTED_FOLD_COUNT
+    if not allow_partial and len(folds) != EXPECTED_FOLD_COUNT:
+        fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
+             f"{EXPECTED_FOLD_COUNT}: {folds}. Pass --allow_partial_folds to score a "
+             "partial run (a smoke test) anyway.")
+    npz_paths = discover_fold_npz(results_dir, folds, npz_pattern, expect_count=expect)
+
+    fold_rows, pred_parts, true_parts = [], [], []
+    for fold in sorted(npz_paths):
+        y_pred, y_true = load_npz(npz_paths[fold])
+
+        expected = dense_expected_truth(fold, segments, label_ids, min_segment_len)
+        if len(y_true) != len(expected):
+            fail(f"{results_dir} fold {fold}: npz holds {len(y_true)} samples, the raw stream "
+                 f"gives {len(expected)} kept samples at min_segment_len={min_segment_len}. "
+                 "Reconstruction not certified.")
+        if not np.array_equal(y_true, expected):
+            n_bad = int((y_true != expected).sum())
+            fail(f"{results_dir} fold {fold}: npz y_true differs from the raw per-sample labels "
+                 f"at {n_bad} of {len(expected)} samples. Reconstruction not certified.")
+
+        raw_total = sum(s["length"] for s in segments if s["subject_name"] == fold)
+        fold_rows.append({
+            "fold": fold, "subject": fold, "npz": os.path.basename(npz_paths[fold]),
+            "n_windows": 0, "n_samples": raw_total, "n_covered": len(y_true),
+            "coverage": len(y_true) / raw_total, "token_ok": True,
+        })
+        pred_parts.append(y_pred)
+        true_parts.append(y_true)
+
+    s_pred = np.concatenate(pred_parts)
+    s_true = np.concatenate(true_parts)
+    s_f1 = f1_score(s_true, s_pred, labels=ALL_LABELS, average=None, zero_division=0)
+    s_prec, s_rec, _, s_support = precision_recall_fscore_support(
+        s_true, s_pred, labels=ALL_LABELS, zero_division=0)
+
+    return {
+        "dir": results_dir, "name": display_name(results_dir), "dense": True,
+        "sw_length": seq_len / SAMPLING_RATE, "sw_overlap": int(round(cfg.get("dense_overlap", 0.5) * 100)),
+        "win_len": seq_len, "step": int(seq_len * (1 - cfg.get("dense_overlap", 0.5))),
+        "min_segment_len": min_segment_len,
+        "folds": fold_rows, "subjects": sorted(r["subject"] for r in fold_rows),
+        "n_windows": 0,
+        "n_raw": int(sum(r["n_samples"] for r in fold_rows)),
+        "n_covered": int(len(s_true)),
+        "coverage": len(s_true) / sum(r["n_samples"] for r in fold_rows),
+        "sample_f1": s_f1,
+        "sample_macro": float(f1_score(s_true, s_pred, labels=ALL_LABELS, average="macro", zero_division=0)),
+        "window_f1": np.full(N_CLASSES, np.nan),
+        "window_macro": float("nan"),
+        "sample_prec": s_prec, "sample_rec": s_rec, "sample_support": s_support,
+        "window_support": np.zeros(N_CLASSES, dtype=int),
+    }
+
+
 def display_name(path):
     base = os.path.basename(os.path.normpath(path))
     stripped = TS_PREFIX_RE.sub("", base)
@@ -466,9 +588,16 @@ def report_per_dir(records):
 
     for r in records:
         print(f"  {r['name']}   [{r['dir']}]")
-        print(f"    sw_length={r['sw_length']}s  sw_overlap={r['sw_overlap']}%  ->  "
-              f"win_len={r['win_len']} samples, step={r['step']} samples "
-              f"(win_len//2 would be {r['win_len'] // 2})")
+        if r.get("dense"):
+            print(f"    DENSE: seq_len={r['win_len']} samples ({r['sw_length']}s), "
+                  f"step={r['step']}, min_segment_len={r['min_segment_len']}  ->  one "
+                  f"prediction per raw sample, no expansion")
+            print("    Certified sample-for-sample against the raw label stream rebuilt from the")
+            print("    seam map, which is stricter than the windowed last-sample check.")
+        else:
+            print(f"    sw_length={r['sw_length']}s  sw_overlap={r['sw_overlap']}%  ->  "
+                  f"win_len={r['win_len']} samples, step={r['step']} samples "
+                  f"(win_len//2 would be {r['win_len'] // 2})")
         print(f"    {'fold':<6} {'subject':<8} {'token':<6} {'windows':>9} {'samples':>9} "
               f"{'covered':>9} {'coverage':>9}  npz")
         for f in r["folds"]:
@@ -490,6 +619,14 @@ def report_tables(records):
         "  pooled over the 5 LOSO folds, scored against the original per-sample labels.",
         lambda r: r["sample_f1"], lambda r: r["sample_macro"],
     )
+
+    if all(r.get("dense") for r in records):
+        print("\n" + "=" * 100)
+        print("[3]/[4] WINDOW-LEVEL TABLES -- not applicable to a dense run")
+        print("=" * 100)
+        print("\n  A dense run emits one prediction per sample; there is no window population to")
+        print("  score, and no last-sample rule to diverge from. Table [2] is the whole result.")
+        return
 
     print("\n" + "=" * 100)
     print("[3] WINDOW-LEVEL PER-CLASS F1 -- diagnostic context only")
@@ -517,6 +654,18 @@ def report_tables(records):
 
 
 def report_delta(records):
+    if any(r.get("dense") for r in records):
+        print("\n" + "=" * 100)
+        print("[5] DELTA vs THE 1s BASELINE -- skipped (dense run present)")
+        print("=" * 100)
+        print("\n  Both a dense and a windowed run are scored on the raw 50 Hz timeline, so their")
+        print("  table [2] rows ARE comparable and should be read side by side. They are not")
+        print("  differenced automatically here because the two denominators are not identical:")
+        print("  the windowed path drops a trailing tail per fold, the dense path drops whole")
+        print("  segments shorter than min_segment_len. Check the coverage column before")
+        print("  differencing by hand.")
+        return
+
     base = [r for r in records if abs(r["sw_length"] - BASELINE_SW_LENGTH) < 1e-9]
     if len(records) < 2:
         return
@@ -555,18 +704,36 @@ def report_precision_recall(records):
         print(f"    {'class':<12} {'support':>10} {'share':>8} {'precision':>10} {'recall':>8} "
               f"{'F1':>8}   {'win_F1':>8} {'win_supp':>9}")
         for c, name in enumerate(CLASS_NAMES):
+            tail = ("" if r.get("dense") else
+                    f"   {r['window_f1'][c]:>8.4f} {int(r['window_support'][c]):>9}")
             print(f"    {name:<12} {int(r['sample_support'][c]):>10} "
                   f"{r['sample_support'][c] / r['sample_support'].sum():>8.4f} "
-                  f"{r['sample_prec'][c]:>10.4f} {r['sample_rec'][c]:>8.4f} {r['sample_f1'][c]:>8.4f}   "
-                  f"{r['window_f1'][c]:>8.4f} {int(r['window_support'][c]):>9}")
+                  f"{r['sample_prec'][c]:>10.4f} {r['sample_rec'][c]:>8.4f} {r['sample_f1'][c]:>8.4f}"
+                  + tail)
+        tail = ("" if r.get("dense") else
+                f"   {r['window_macro']:>8.4f} {r['n_windows']:>9}")
         print(f"    {'MACRO':<12} {int(r['sample_support'].sum()):>10} {'':>8} {'':>10} {'':>8} "
-              f"{r['sample_macro']:>8.4f}   {r['window_macro']:>8.4f} {r['n_windows']:>9}")
+              f"{r['sample_macro']:>8.4f}" + tail)
 
 
 def report_sanity(records):
     print("\n" + "=" * 100)
     print("[7] SANITY CHECKS -- printed, never asserted")
     print("=" * 100)
+
+    if all(r.get("dense") for r in records):
+        reb = CLASS_NAMES.index("rebound")
+        print("\n  Dense run: the window-level anchors below do not apply. Coverage and the")
+        print("  rebound line are printed; everything keyed to win_len/step is omitted.\n")
+        print(f"      {'config':<24} {'raw':>10} {'covered':>10} {'gap':>7} {'coverage':>10} "
+              f"{'reb_F1':>8} {'reb_supp':>9}")
+        for r in records:
+            print(f"      {r['name']:<24} {r['n_raw']:>10} {r['n_covered']:>10} "
+                  f"{r['n_raw'] - r['n_covered']:>7} {r['coverage']:>10.5f} "
+                  f"{r['sample_f1'][reb]:>8.4f} {int(r['sample_support'][reb]):>9}")
+        print("\n      The gap is the samples in segments shorter than min_segment_len, which")
+        print("      the loader discards; it is 0 at the default min_segment_len=25.")
+        return
 
     reb = CLASS_NAMES.index("rebound")
 
@@ -633,6 +800,16 @@ def main():
                              "comparison table in the order given.")
     parser.add_argument("--labels", default="labels_export.csv.gz",
                         help="Exported per-sample labels (columns: subject, label), original row order.")
+    parser.add_argument("--dense", action="store_true",
+                        help="Score a --dense run: the npz already holds one prediction per raw "
+                             "sample, so the fold->subject brute force and the last-window-wins "
+                             "expansion are both bypassed. Ground truth is certified sample for "
+                             "sample against the raw stream rebuilt from --seam_map.")
+    parser.add_argument("--seam_map", default="data/seam_map.json",
+                        help="Seam map used by --dense to rebuild each fold's kept-sample stream.")
+    parser.add_argument("--allow_partial_folds", action="store_true",
+                        help="Score a run with fewer than 5 folds (a smoke test). Off by default "
+                             "so a truncated run cannot be mistaken for a complete one.")
     parser.add_argument("--npz_pattern", default=None,
                         help="Explicit glob containing '{fold}', overriding npz auto-detection. "
                              "Only needed when a run dir holds more than one npz per fold.")
@@ -659,15 +836,22 @@ def main():
     print(f"\n  loaded {len(labels_df)} per-sample labels, {labels_df['subject'].nunique()} subjects, "
           f"{labels_df['label_id'].nunique()} classes")
 
-    candidate_cache = {}
-    records = [process_dir(d, labels_df, candidate_cache, args.npz_pattern) for d in results_dirs]
+    if args.dense:
+        seam = load_seam_map(args.seam_map)
+        print(f"  seam map       : {args.seam_map} ({seam['total_segments']} segments)")
+        records = [process_dir_dense(d, labels_df, seam, args.npz_pattern, args.allow_partial_folds)
+                   for d in results_dirs]
+    else:
+        candidate_cache = {}
+        records = [process_dir(d, labels_df, candidate_cache, args.npz_pattern) for d in results_dirs]
 
     subject_sets = {tuple(r["subjects"]) for r in records}
     if len(subject_sets) != 1:
         detail = "; ".join(f"{r['name']} -> {r['subjects']}" for r in records)
         fail("configs resolved to different LOSO subject sets, so their scores are computed over "
              f"different data and cannot be compared: {detail}")
-    print(f"  all {len(records)} config(s) resolved to the same 5 subjects: {records[0]['subjects']}")
+    print(f"  all {len(records)} config(s) resolved to the same {len(records[0]['subjects'])} "
+          f"subject(s): {records[0]['subjects']}")
 
     report_per_dir(records)
     report_tables(records)

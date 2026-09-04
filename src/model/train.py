@@ -380,6 +380,16 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
 
     # if weighted loss chosen, calculate weights based on training dataset; else each class is weighted equally
     scheme = config["weight_scheme"]
+    # Dense: every weight scheme below counts the label array it is handed, and the dense
+    # target array is (N_seq, T) with ignore_index padding -- counting that would both
+    # double-count overlapping samples and choke on the negative pad id. The per-sample
+    # stream from sequence_loader.build_sequences carries each kept sample exactly once,
+    # in stream order, which is the array the windowed path's y_train stands in for.
+    # When --dense is off this is `train_labels` itself, so every scheme is unchanged.
+    if config.get("dense", False):
+        train_labels_for_weights = np.asarray(config["dense_train_sample_labels"])
+    else:
+        train_labels_for_weights = train_labels
     if config.get("pin_weights_to_pre_augmentation", False) and scheme not in ("sqrt_inverse", "capped"):
         print(f"\n[pin_weights_to_pre_augmentation] WARNING: flag is set but weight_scheme={scheme!r} -- "
               "pinning is only implemented for sqrt_inverse/capped and is being IGNORED. Weights below "
@@ -388,10 +398,10 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
         all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
         class_weights = torch.from_numpy(
             compute_class_weight(
-                "balanced", classes=np.unique(train_labels + 1), y=train_labels + 1
+                "balanced", classes=np.unique(train_labels_for_weights + 1), y=train_labels_for_weights + 1
             )
         ).float()
-        for i, lbl in enumerate(np.unique(train_labels)):
+        for i, lbl in enumerate(np.unique(train_labels_for_weights)):
             all_class_weights[int(lbl)] = class_weights[i]
 
         if config["loss"] == "cross_entropy":
@@ -399,20 +409,20 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
 
         print("Applied weighted class weights: ")
         print(class_weights)
-        print_weight_summary(config, scheme, np.unique(train_labels), all_class_weights)
+        print_weight_summary(config, scheme, np.unique(train_labels_for_weights), all_class_weights)
     elif scheme == "none":
         all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
         class_weights = torch.from_numpy(
-            compute_class_weight(None, classes=np.unique(train_labels + 1), y=train_labels + 1)
+            compute_class_weight(None, classes=np.unique(train_labels_for_weights + 1), y=train_labels_for_weights + 1)
         ).float()
-        for i, lbl in enumerate(np.unique(train_labels)):
+        for i, lbl in enumerate(np.unique(train_labels_for_weights)):
             all_class_weights[int(lbl)] = class_weights[i]
         if config["loss"] == "cross_entropy":
             loss.weight = all_class_weights.to(device)
     elif scheme in ("sqrt_inverse", "capped"):
         all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
-        # identical to train_labels unless --pin_weights_to_pre_augmentation is set
-        weight_labels = pinned_weight_labels(train_labels, config)
+        # identical to train_labels_for_weights unless --pin_weights_to_pre_augmentation is set
+        weight_labels = pinned_weight_labels(train_labels_for_weights, config)
         balanced_weights = compute_class_weight(
             "balanced", classes=np.unique(weight_labels + 1), y=weight_labels + 1
         )
@@ -433,7 +443,7 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
         print_weight_summary(config, scheme, np.unique(weight_labels), all_class_weights)
     elif scheme == "power_inverse":
         all_class_weights = torch.from_numpy(np.ones(config["nb_classes"])).float()
-        present_labels, class_counts = np.unique(train_labels, return_counts=True)
+        present_labels, class_counts = np.unique(train_labels_for_weights, return_counts=True)
         derived_weights = (1.0 / class_counts) ** config["weight_exponent"]
         derived_weights = derived_weights / derived_weights.mean()
         class_weights = torch.from_numpy(derived_weights).float()
@@ -481,6 +491,13 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
         pin_memory=use_pin,
     )
 
+    # Dense logits are (B, C, T) and windowed logits are (B, C); argmax must take the CLASS
+    # axis in both. axis=-1 is the class axis only in the windowed layout -- on (B, C, T) it
+    # would take the argmax over time. axis=1 is correct for both, but the windowed path keeps
+    # its literal -1 so its behaviour is unchanged by inspection, not just by argument.
+    pred_axis = 1 if config.get("dense", False) else -1
+    IGNORE_INDEX = -100
+
     # counters and objects used for early stopping and learning rate adjustment
     best_metric = 0.0
     best_epoch = 1
@@ -521,6 +538,17 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
 
             if config["loss"] == "maxup":
                 train_loss = maxup.maxup_loss(train_output, targets.long())[0]
+            elif config.get("dense", False):
+                # (B, C, T) -> (B*T, C) and (B, T) -> (B*T,). Mathematically identical to
+                # handing CrossEntropyLoss the 2-D form -- both average over the non-ignored
+                # elements with the same class weights -- but it routes to the 1-D nll_loss
+                # kernel. The 2-D CUDA kernel (nll_loss2d_forward_out_cuda_template) has no
+                # deterministic implementation, and misc/torchutils.py's seed_torch sets
+                # torch.use_deterministic_algorithms(True), so the 2-D form raises outright.
+                train_loss = criterion(
+                    train_output.transpose(1, 2).reshape(-1, train_output.shape[1]),
+                    targets.long().reshape(-1),
+                )
             else:
                 train_loss = criterion(train_output, targets.long())
 
@@ -530,8 +558,15 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
             train_losses.append(float(train_loss.item()))
 
             # predictions / gt (collect then concat once)
-            y_preds = np.argmax(train_output.detach().cpu().numpy(), axis=-1)
+            y_preds = np.argmax(train_output.detach().cpu().numpy(), axis=pred_axis)
             y_true = targets.detach().cpu().numpy().flatten()
+            if config.get("dense", False):
+                # (B, T) -> (B*T,), then drop padded timesteps so everything downstream --
+                # the per-epoch metrics and the returned prediction dump alike -- sees a flat
+                # 1-D array of real samples, exactly the shape the windowed path produces.
+                y_preds = y_preds.reshape(-1)
+                keep = y_true != IGNORE_INDEX
+                y_preds, y_true = y_preds[keep], y_true[keep]
             train_preds_parts.append(y_preds.astype(int))
             train_gt_parts.append(y_true.astype(int))
 
@@ -569,6 +604,11 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
 
                 if config["loss"] == "maxup":
                     val_loss = maxup.maxup_loss(val_output, targets.long())[0]
+                elif config.get("dense", False):
+                    val_loss = criterion(
+                        val_output.transpose(1, 2).reshape(-1, val_output.shape[1]),
+                        targets.long().reshape(-1),
+                    )
                 else:
                     val_loss = criterion(val_output, targets.long())
 
@@ -576,8 +616,12 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
 
                 val_losses.append(float(val_loss.item()))
 
-                y_preds = np.argmax(val_output.detach().cpu().numpy(), axis=-1)
+                y_preds = np.argmax(val_output.detach().cpu().numpy(), axis=pred_axis)
                 y_true = targets.detach().cpu().numpy().flatten()
+                if config.get("dense", False):
+                    y_preds = y_preds.reshape(-1)
+                    keep = y_true != IGNORE_INDEX
+                    y_preds, y_true = y_preds[keep], y_true[keep]
                 val_preds_parts.append(y_preds.astype(int))
                 val_gt_parts.append(y_true.astype(int))
 
