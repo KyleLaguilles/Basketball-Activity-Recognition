@@ -1,5 +1,5 @@
 logs
-data
+data/*
 !data/seam_map.json
 .idea
 results/
@@ -33,7 +33,7 @@ var/
 .ipynb_checkpoints/
 
 # --- Data & Large Files (Prevent Git Errors) ---
-/data/
+/data/*
 /datasets/
 /models/
 /checkpoints/
