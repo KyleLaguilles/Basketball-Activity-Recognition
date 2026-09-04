@@ -221,6 +221,13 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
             args.dense_train_sample_labels = dense_res['train_sample_labels']
             args.dense_val_sample_labels = dense_res['val_sample_labels']
             dense_entries, dense_kept_rows = dense_val_plan(data, args, sbj)
+            # train() stitches every epoch's validation predictions with these, so the metric
+            # it selects the best epoch on is computed over the same per-sample population the
+            # saved npz holds. They travel through vars(args); main.py:158-160 dumps cfg.txt
+            # before the fold loop runs, so these arrays never reach cfg.txt or the W&B config.
+            args.dense_val_entries = dense_entries
+            args.dense_val_kept_rows = dense_kept_rows
+            args.dense_n_rows = len(data)
             print(f'  Dense sequences  train: {X_train.shape}, val: {X_val.shape} '
                   f'(seq_len={args.dense_seq_len}, overlap={args.dense_overlap}, '
                   f'min_segment_len={args.dense_min_seg})')
@@ -404,14 +411,11 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                                                           )
 
         if args.dense:
-            # One prediction per raw sample, not per (sequence, timestep) -- see
-            # stitch_dense_predictions. Everything below (scores, csv dump, npz dump) then
-            # consumes the same (N, 2) [y_pred, y_true] layout the windowed path produces.
-            n_dense_timesteps = len(val_output)
-            val_output = stitch_dense_predictions(val_output, dense_entries, dense_kept_rows,
-                                                  len(data))
-            print(f'  Dense stitching  {n_dense_timesteps} timesteps -> {len(val_output)} '
-                  f'samples (last-sequence-wins over overlapping sequences)')
+            # train() already stitched: it does so inside the epoch loop, so the per-epoch
+            # metric that picks the best epoch and the array saved here are the same
+            # per-sample population. What is left to do is check the post-condition.
+            print(f'  Dense predictions  {len(val_output)} samples '
+                  f'(stitched per epoch, last-sequence-wins over overlapping sequences)')
             if len(val_output) != len(args.dense_val_sample_labels):
                 raise ValueError(
                     f"dense stitching produced {len(val_output)} samples but the loader kept "

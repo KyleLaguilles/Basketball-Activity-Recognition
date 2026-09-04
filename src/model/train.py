@@ -628,6 +628,37 @@ def train(train_features, train_labels, val_features, val_labels, network, optim
         val_preds = np.concatenate(val_preds_parts) if val_preds_parts else np.array([], dtype=int)
         val_gt = np.concatenate(val_gt_parts) if val_gt_parts else np.array([], dtype=int)
 
+        if config.get("dense", False):
+            # Collapse per-timestep predictions onto one per raw sample BEFORE any metric is
+            # computed. Overlapping sequences predict interior samples twice and edge samples
+            # once, so scoring the raw timesteps would weight segment interiors about double --
+            # and would select the best epoch on a population the saved npz and
+            # analysis/sample_level_f1.py never see. Same last-sequence-wins convention the
+            # saved output uses. Imported here rather than at module scope because
+            # model/validation.py imports this module; by the time train() runs it is fully
+            # loaded, so the deferred import is resolved from sys.modules.
+            from model.validation import stitch_dense_predictions
+
+            n_timesteps = len(val_preds)
+            stitched = stitch_dense_predictions(
+                np.vstack((val_preds, val_gt)).T,
+                config["dense_val_entries"],
+                config["dense_val_kept_rows"],
+                config["dense_n_rows"],
+            )
+            val_preds, val_gt = stitched[:, 0], stitched[:, 1]
+
+            expected_truth = np.asarray(config["dense_val_sample_labels"]).astype(int)
+            if not np.array_equal(val_gt, expected_truth):
+                raise ValueError(
+                    f"dense stitching: stitched validation targets ({len(val_gt)} samples) do "
+                    f"not match the loader's val_sample_labels ({len(expected_truth)} samples). "
+                    "The sequence-order assumption behind the stitch is violated."
+                )
+            if e == 0:
+                print(f"[dense] validation metrics computed on {len(val_gt)} stitched samples "
+                      f"(from {n_timesteps} per-timestep predictions)")
+
         # evaluation metrics
         t_conf_mat = confusion_matrix(train_gt, train_preds, normalize="true", labels=labels)
         t_acc = t_conf_mat.diagonal() / t_conf_mat.sum(axis=1)
