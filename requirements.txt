@@ -22,3 +22,4 @@ pyinstrument==5.1.2
 wandb==0.25.0
 prettytable==3.17.0
 einops==0.6.1
+torch==2.14.0

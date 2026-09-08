@@ -45,8 +45,8 @@ ANCHOR_VAL_SAMPLES = {"4d70": 126839, "9bd4": 121401, "a0da": 122130,
                       "b512": 117586, "ce9d": 126777}
 ANCHOR_TOTAL_SAMPLES = 1377145
 ANCHOR_TOTAL_SEGMENTS = 763
-ANCHOR_DISCARDED_SEGMENTS = 14
-ANCHOR_DISCARDED_SAMPLES = 582
+ANCHOR_DISCARDED_SEGMENTS = 0
+ANCHOR_DISCARDED_SAMPLES = 0
 
 # recon §6.1, fold 4d70 validation samples per class (before discard).
 ANCHOR_4D70_VAL_CLASS = {"dribbling": 6891, "shot": 189, "pass": 3413, "rebound": 1720,
