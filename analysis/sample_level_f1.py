@@ -90,6 +90,7 @@ HardFail = wp.HardFail
 SAMPLING_RATE = 50
 
 EXPECTED_FOLD_COUNT = 5
+ALL_SUBJECT_FOLD_COUNT = 14      # a --dense run with --loso_subjects unset covers every subject
 UNCOVERED = -1
 
 # Recorded window-level anchors, verbatim from grid_read.py:61-62. Printed for
@@ -427,6 +428,47 @@ def process_dir(results_dir, labels_df, candidate_cache, npz_pattern):
 # dense (per-sample) processing
 # --------------------------------------------------------------------------- #
 
+DENSE_NPZ_RE = re.compile(r"^preds_([0-9a-f]{4})_.*\.npz$")
+
+
+def resolve_dense_folds(results_dir, cfg):
+    """
+    The fold list for a --dense run: cfg's when it names one, else the npz filenames.
+
+    A run over every subject records `loso_subjects: []` (main.py resolves an unset
+    --loso_subjects to an empty list, and cross_participant_cv then iterates all
+    subjects). The previous `cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)`
+    turned that empty list into the five BASELINE folds, so an all-subject run was
+    scored on 5 of its 14 npz files -- reporting coverage 1.00000 and a plausible
+    macro F1, with nothing in the output showing that 9 folds had been dropped. The
+    coverage column cannot catch it either: coverage is measured against the folds
+    that were loaded, so discarding folds entirely leaves it at 1.0.
+
+    Deriving the folds from the filenames removes the guess. When cfg does name folds
+    they must agree with the files exactly, in both directions, so a mismatch is a
+    hard fail rather than a silent intersection.
+    """
+    cfg_folds = list(cfg.get("loso_subjects") or [])
+
+    by_fold = {}
+    for path in sorted(glob.glob(os.path.join(results_dir, "preds_*.npz"))):
+        base = os.path.basename(path)
+        if "_aug" in base:
+            continue
+        m = DENSE_NPZ_RE.match(base)
+        if m:
+            by_fold.setdefault(m.group(1), []).append(base)
+
+    if not by_fold:
+        fail(f"{results_dir}: no preds_<fold>_*.npz files found; cannot resolve the folds.")
+
+    found = sorted(by_fold)
+    if cfg_folds and set(cfg_folds) != set(found):
+        fail(f"{results_dir}: cfg loso_subjects lists {sorted(cfg_folds)} but the npz files "
+             f"are {found}. Refusing to score a fold set the run does not claim.")
+    return sorted(cfg_folds) if cfg_folds else found
+
+
 def load_seam_map(path):
     """The segment map written by scripts/build_seam_map.py, used only in --dense mode."""
     if not os.path.isfile(path):
@@ -489,11 +531,12 @@ def process_dir_dense(results_dir, labels_df, seam, npz_pattern, allow_partial):
                  f"{seg['subject_name']!r} but the labels file says "
                  f"{subj_col[seg['start_row']]!r}; the two are not aligned.")
 
-    folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
-    expect = len(folds) if allow_partial else EXPECTED_FOLD_COUNT
-    if not allow_partial and len(folds) != EXPECTED_FOLD_COUNT:
-        fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
-             f"{EXPECTED_FOLD_COUNT}: {folds}. Pass --allow_partial_folds to score a "
+    folds = resolve_dense_folds(results_dir, cfg)
+    expect = len(folds) if allow_partial else len(folds)
+    if not allow_partial and len(folds) not in (EXPECTED_FOLD_COUNT, ALL_SUBJECT_FOLD_COUNT):
+        fail(f"{results_dir}: resolved {len(folds)} folds, expected "
+             f"{EXPECTED_FOLD_COUNT} (the LOSO baseline) or {ALL_SUBJECT_FOLD_COUNT} "
+             f"(every subject): {folds}. Pass --allow_partial_folds to score a "
              "partial run (a smoke test) anyway.")
     npz_paths = discover_fold_npz(results_dir, folds, npz_pattern, expect_count=expect)
 
