@@ -108,6 +108,14 @@ class InceptionContext(nn.Module):
             it only ever sees across windows, never within one. Default False leaves
             the windowed forward path bit-identical: the dense branch returns before
             any existing line runs, and the dense layers are not even constructed.
+        no_bilstm: bool
+            Ablation control for the dense head; only meaningful when dense=True.
+            When True, the dense BiLSTM is skipped (and not constructed) and the GRU
+            output is routed straight through a single Linear(nb_units_gru_ic, classes).
+            This removes the head's temporal smoothing capacity while leaving the dense
+            labels, sequences and training loop identical, which isolates how much of the
+            rebound F1 gain came from dense labeling rather than from the BiLSTM.
+            Default False leaves the dense path bit-identical.
     """
 
     def __init__(
@@ -126,6 +134,7 @@ class InceptionContext(nn.Module):
         use_channel_affine=False,
         branch_dilations=(1, 1, 1, 1),
         dense=False,
+        no_bilstm=False,
     ):
         super().__init__()
 
@@ -179,7 +188,14 @@ class InceptionContext(nn.Module):
         # the whole point of the dense path is that a rebound's lead-in and follow-through
         # are both visible. batch_first=True because here the sequence axis really is dim 1.
         self.dense = dense
-        if dense:
+        self.no_bilstm = no_bilstm
+        if dense and no_bilstm:
+            # Ablation: no BiLSTM, so the head's input is the GRU's own hidden size
+            # (nb_units_gru_ic = 128 under the pre-registered config) rather than
+            # 2 * lstm_units. The GRU is still recurrent, but the head adds no further
+            # temporal smoothing on top of it.
+            self.dense_head = nn.Linear(nb_units_gru_ic, classes)
+        elif dense:
             self.dense_lstm = nn.LSTM(
                 nb_units_gru_ic,
                 lstm_units,
@@ -207,7 +223,8 @@ class InceptionContext(nn.Module):
         if self.dense:
             # Dense head -- returns before the attention pooling below, which is the module
             # that collapses T in the windowed path. Nothing after this point runs.
-            x, _ = self.dense_lstm(x)                        # (B, T, 2 * lstm_units)
+            if not self.no_bilstm:
+                x, _ = self.dense_lstm(x)                    # (B, T, 2 * lstm_units)
             x = self.dense_head(x)                           # (B, T, classes)
             return x.permute(0, 2, 1)                        # (B, classes, T) for CrossEntropyLoss
 

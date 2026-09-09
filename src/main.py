@@ -359,6 +359,12 @@ if __name__ == '__main__':
                               'samples), which is why 50 is not the default.')
     parser.add_argument('--dense_seam_map', default='data/seam_map.json', type=str,
                          help='Path to the seam map built by scripts/build_seam_map.py.')
+    parser.add_argument('--no_bilstm', default=False, action='store_true',
+                         help='--dense ablation: drop the dense head BiLSTM and classify each '
+                              'timestep from the GRU output with a single Linear layer. Isolates '
+                              'whether the rebound F1 gain came from dense labeling or from the '
+                              "BiLSTM's temporal smoothing capacity; everything else (labels, "
+                              'sequences, batch size, training loop) is unchanged. Requires --dense.')
 
     args = parser.parse_args()
 
@@ -423,5 +429,8 @@ if __name__ == '__main__':
             parser.error("--dense does not support --augment_multiplier > 1: augmentation is "
                          "window- and batch-order-based (see augmentation.py's module docstring) "
                          "and has no sequence-level equivalent.")
+    elif args.no_bilstm:
+        parser.error("--no_bilstm is an ablation of the dense head and requires --dense; "
+                     "without it the flag would be silently ignored.")
 
     main(args)

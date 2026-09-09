@@ -212,3 +212,7 @@ src/data_processing/preprocess_data.py — data loading untouched
 train.py loss / weight / optimizer / scheduler — reused unchanged
 
 Provenance: anchors from docs/recon_dense_report.md (2026-09-04), all reproduced against baseline seeds 1–3 in logs/subset_specific/loso_G/inceptioncontext/2026-07-17_07-56-30 (seed 1), 2026-07-17_11-15-00 (seed 2), 2026-07-17_11-15-03 (seed 3). Evaluation scripts analysis/sample_level_f1.py and analysis/boracle_duration_bias.py run read-only against these directories. This document committed at docs/prereg_dense.md before any dense training run is launched.
+
+Hypothesis: the dense labeling, not the BiLSTM capacity, is the primary driver of rebound F1 improvement.
+Success bar: seed-1 rebound F1 ≥ some threshold with --no_bilstm (you pick the number — even "above the windowed baseline of 0.1114" is a meaningful bar).
+Failure interpretation: if rebound F1 drops back toward ~0.11, the BiLSTM's temporal smoothing is essential and the dense labeling alone is insufficient.

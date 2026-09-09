@@ -388,6 +388,7 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
                 use_channel_affine=args.use_channel_affine,
                 branch_dilations=args.branch_dilations,
                 dense=args.dense,
+                no_bilstm=args.no_bilstm,
             )
         else:
             print("Did not provide a valid network name!")
