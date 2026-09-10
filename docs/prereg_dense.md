@@ -216,3 +216,4 @@ Provenance: anchors from docs/recon_dense_report.md (2026-09-04), all reproduced
 Hypothesis: the dense labeling, not the BiLSTM capacity, is the primary driver of rebound F1 improvement.
 Success bar: seed-1 rebound F1 ≥ some threshold with --no_bilstm (you pick the number — even "above the windowed baseline of 0.1114" is a meaningful bar).
 Failure interpretation: if rebound F1 drops back toward ~0.11, the BiLSTM's temporal smoothing is essential and the dense labeling alone is insufficient.
+Results: seeds 1–3 dense results are reported separately at docs/dense_results.md (2026-09-09). This pre-registration is unmodified apart from this line.
