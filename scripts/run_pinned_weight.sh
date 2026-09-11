@@ -77,7 +77,7 @@ $PYTHON src/main.py \
   --cross_channel_aggregation_type FC \
   --temporal_info_interaction_type gru \
   --temporal_info_aggregation_type FC \
-  --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+  --loso_subjects b512_na,a0da_eu,4d70_eu,ce9d_eu,9bd4_na \
   --subsample_fraction 1.0 \
   --subsample_seed 0 \
   --save_val_npz \

@@ -64,7 +64,8 @@ STEP = 25               # win_len - int((sw_overlap=50 / 100) * win_len)
 
 BASELINE_DIRS = ("2026-07-17_07-56-30", "2026-07-17_11-15-00", "2026-07-17_11-15-03")
 SEED_OF_DIR = {"2026-07-17_07-56-30": 1, "2026-07-17_11-15-00": 2, "2026-07-17_11-15-03": 3}
-EXPECTED_FOLDS = ("4d70", "9bd4", "a0da", "b512", "ce9d")
+# Placeholder baseline participants (<id>_<eu|na>), matching the run scripts' --loso_subjects.
+EXPECTED_FOLDS = ("4d70_eu", "9bd4_na", "a0da_eu", "b512_na", "ce9d_eu")
 
 FOCUS_CLASSES = ["rebound", "layup", "shot", "walking", "running"]
 DECILE_EDGES = np.arange(0.0, 1.01, 0.1)

@@ -28,8 +28,6 @@ from data_processing.preprocess_data import load_dataset          # noqa: E402
 from data_processing.sequence_loader import build_sequences       # noqa: E402
 
 SEAM_MAP = "data/seam_map.json"
-CLASS_NAMES = ["dribbling", "shot", "pass", "rebound", "layup",
-               "walking", "running", "standing", "sitting"]
 
 SEQ_LEN = 500
 OVERLAP = 0.5
@@ -37,21 +35,18 @@ MIN_SEGMENT_LEN = 25
 PAD_VALUE = 0.0
 IGNORE_INDEX = -100
 
-# LabelEncoder codes of the five loso_G validation subjects (recon §3.3).
-VAL_FOLDS = [(5, "4d70"), (6, "9bd4"), (7, "a0da"), (9, "b512"), (11, "ce9d")]
+# LabelEncoder codes of five loso_G validation participants -- placeholders, the same
+# five as window_purity.EXPECTED_FOLDS and the run scripts' --loso_subjects.
+VAL_FOLDS = [(8, "4d70_eu"), (11, "9bd4_na"), (12, "a0da_eu"), (17, "b512_na"), (19, "ce9d_eu")]
 
-# recon §3.3 validation sample counts, before any short-segment discard.
-ANCHOR_VAL_SAMPLES = {"4d70": 126839, "9bd4": 121401, "a0da": 122130,
-                      "b512": 117586, "ce9d": 126777}
+# recon §2.1 per-recording sample counts (scripts/build_seam_map.py
+# ANCHOR_RECORDING_SAMPLES; one participant == one recording), before any discard.
+ANCHOR_VAL_SAMPLES = {"4d70_eu": 61539, "9bd4_na": 58684, "a0da_eu": 62570,
+                      "b512_na": 67014, "ce9d_eu": 62697}
 ANCHOR_TOTAL_SAMPLES = 1377145
 ANCHOR_TOTAL_SEGMENTS = 763
 ANCHOR_DISCARDED_SEGMENTS = 0
 ANCHOR_DISCARDED_SAMPLES = 0
-
-# recon §6.1, fold 4d70 validation samples per class (before discard).
-ANCHOR_4D70_VAL_CLASS = {"dribbling": 6891, "shot": 189, "pass": 3413, "rebound": 1720,
-                         "layup": 809, "walking": 63176, "running": 35579,
-                         "standing": 5298, "sitting": 9764}
 
 CONTENT_CHECK_N = 20
 CONTENT_CHECK_SEED = 42
@@ -171,7 +166,7 @@ def main():
         val_total = sum(s["length"] for s in segments if s["subject_code"] == code)
         train_total = sum(s["length"] for s in segments if s["subject_code"] != code)
         check(val_total == ANCHOR_VAL_SAMPLES[name],
-              f"seam map val rows == recon §3.3 ({ANCHOR_VAL_SAMPLES[name]})", str(val_total))
+              f"seam map val rows == recon §2.1 ({ANCHOR_VAL_SAMPLES[name]})", str(val_total))
         check(res["val_sample_count"] + disc["val"] == val_total,
               "val_sample_count + discarded val samples == total val samples",
               f"{res['val_sample_count']} + {disc['val']} == {val_total}")
@@ -280,19 +275,6 @@ def main():
             "disc_train": disc["train"], "disc_val": disc["val"],
             "padded_train": n_padded["train"], "padded_val": n_padded["val"],
         })
-
-        if name == "4d70":
-            print("\n  (extra) fold 4d70 class distribution vs recon §6.1")
-            vb = np.bincount(res["val_sample_labels"], minlength=9)
-            tb = np.bincount(res["train_sample_labels"], minlength=9)
-            print(f"      {'class':<12} {'val (kept)':>11} {'recon §6.1':>11} {'delta':>7} {'train (kept)':>13}")
-            for c, cn in enumerate(CLASS_NAMES):
-                anc = ANCHOR_4D70_VAL_CLASS[cn]
-                print(f"      {cn:<12} {int(vb[c]):>11} {anc:>11} {int(vb[c]) - anc:>+7} {int(tb[c]):>13}")
-            print(f"      {'TOTAL':<12} {int(vb.sum()):>11} {sum(ANCHOR_4D70_VAL_CLASS.values()):>11} "
-                  f"{int(vb.sum()) - sum(ANCHOR_4D70_VAL_CLASS.values()):>+7} {int(tb.sum()):>13}")
-            print(f"      (the deficit is the {disc['val']} sample(s) in 4d70's discarded "
-                  f"segment(s), < {MIN_SEGMENT_LEN} samples each)")
 
         del res
 

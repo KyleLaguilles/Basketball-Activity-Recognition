@@ -14,6 +14,7 @@ Column layout per file (after index_col=0):
 import argparse
 import glob
 import os
+import re
 import sys
 
 import numpy as np
@@ -25,35 +26,29 @@ CLASS_NAMES = [
     "walking", "running", "standing", "sitting",
 ]
 N_CLASSES = len(CLASS_NAMES)
-EXPECTED_SUBJECTS = 14
+EXPECTED_SUBJECTS = 24
+
+# Participant key <4-hex id>_<eu|na> (preprocess_data.participant_keys).
+SUBJECT_RE = re.compile(r"^([0-9a-f]{4}_(?:eu|na))(?:_|$)")
 
 
 def parse_subjects(paths):
     """
     Recover subject IDs from filenames: predictions_best_{subject}_{runname}.csv
-    All files in one log dir share the same run name, so the longest common
-    _-delimited suffix across all bare names is the run name; the rest is the subject.
-    Returns None when parsing is ambiguous (empty IDs or duplicates).
+
+    The subject is matched by its known shape, <4-hex id>_<eu|na>, not inferred by
+    stripping the longest _-delimited suffix all files share as the run name: on a
+    single-site run every file also shares the site token, so that inference strips it
+    and collapses 0846_eu back to 0846. Returns None when a file does not start with a
+    participant key, or two files resolve to the same one.
     """
     stems = [os.path.splitext(os.path.basename(p))[0] for p in paths]
     bare = [s[len("predictions_best_"):] for s in stems]
-    parts_list = [b.split("_") for b in bare]
-    n_min = min(len(p) for p in parts_list)
-
-    suffix_len = 0
-    for i in range(1, n_min):           # probe 1, 2, ... trailing tokens
-        tail = "_".join(parts_list[0][-i:])
-        if all("_".join(p[-i:]) == tail for p in parts_list):
-            suffix_len = i              # still common — extend
-        else:
-            break                       # mismatch; can't go further
-
-    if suffix_len == 0:
-        subjects = ["_".join(p) for p in parts_list]
-    else:
-        subjects = ["_".join(p[:-suffix_len]) for p in parts_list]
-
-    if any(s == "" for s in subjects) or len(set(subjects)) != len(subjects):
+    matches = [SUBJECT_RE.match(b) for b in bare]
+    if any(m is None for m in matches):
+        return None
+    subjects = [m.group(1) for m in matches]
+    if len(set(subjects)) != len(subjects):
         return None
     return subjects
 

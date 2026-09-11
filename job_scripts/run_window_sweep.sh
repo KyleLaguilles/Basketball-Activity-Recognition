@@ -40,7 +40,7 @@ python src/main.py \
     --lr_scheduler step_lr \
     --lr_step 10 \
     --lr_decay 0.9 \
-    --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+    --loso_subjects b512_na,a0da_eu,4d70_eu,ce9d_eu,9bd4_na \
     --subsample_classes rebound,layup \
     --subsample_fraction 1.0 \
     --subsample_seed 0 \
@@ -86,7 +86,7 @@ python src/main.py \
     --lr_scheduler step_lr \
     --lr_step 10 \
     --lr_decay 0.9 \
-    --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+    --loso_subjects b512_na,a0da_eu,4d70_eu,ce9d_eu,9bd4_na \
     --subsample_classes rebound,layup \
     --subsample_fraction 1.0 \
     --subsample_seed 0 \
@@ -132,7 +132,7 @@ python src/main.py \
     --lr_scheduler step_lr \
     --lr_step 10 \
     --lr_decay 0.9 \
-    --loso_subjects b512,a0da,4d70,ce9d,9bd4 \
+    --loso_subjects b512_na,a0da_eu,4d70_eu,ce9d_eu,9bd4_na \
     --subsample_classes rebound,layup \
     --subsample_fraction 1.0 \
     --subsample_seed 0 \

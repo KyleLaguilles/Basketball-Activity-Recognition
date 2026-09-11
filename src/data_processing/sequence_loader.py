@@ -74,6 +74,10 @@ N_CHANNELS = 3
 
 EXPECTED_SEAM_MAP_VERSION = 1
 
+# One subject code per participant, keyed on the raw filename stem <id>_<eu|na>
+# (preprocess_data.participant_keys): 13 EU + 11 NA recordings.
+EXPECTED_SUBJECT_COUNT = 24
+
 
 class SeamMapError(RuntimeError):
     """The seam map is missing, malformed, or does not describe this train array."""
@@ -123,6 +127,12 @@ def load_seam_map(seam_map_path, train_array=None):
         for key in ("subject_code", "subject_name", "recording", "start_row", "end_row", "length"):
             if key not in seg:
                 raise SeamMapError(f"{seam_map_path}: segment {i} missing key {key!r}")
+        if seg["subject_name"] != seg["recording"]:
+            raise SeamMapError(
+                f"{seam_map_path}: segment {i} has subject_name {seg['subject_name']!r} but "
+                f"recording {seg['recording']!r}; subjects must be keyed on the full recording "
+                "stem. Rebuild it: python scripts/build_seam_map.py"
+            )
         if seg["start_row"] != cursor:
             raise SeamMapError(
                 f"{seam_map_path}: segment {i} starts at row {seg['start_row']}, expected "
@@ -141,6 +151,14 @@ def load_seam_map(seam_map_path, train_array=None):
             f"total_samples={payload['total_samples']}"
         )
 
+    map_codes = sorted({seg["subject_code"] for seg in segments})
+    if map_codes != list(range(EXPECTED_SUBJECT_COUNT)):
+        raise SeamMapError(
+            f"{seam_map_path}: expected subject codes 0..{EXPECTED_SUBJECT_COUNT - 1}, got "
+            f"{len(map_codes)}: {map_codes}. A 14-code map is the old hex-only keying that "
+            "merged each <id>_eu/<id>_na pair; rebuild it: python scripts/build_seam_map.py"
+        )
+
     if train_array is not None:
         if train_array.ndim != 2 or train_array.shape[1] != 5:
             raise SeamMapError(
@@ -155,6 +173,13 @@ def load_seam_map(seam_map_path, train_array=None):
         # Subject alignment: the map's subject_code must agree with column 0 at both ends
         # of every segment. This is what catches a map built against a different CSV.
         codes = train_array[:, SUBJECT_COL]
+        n_codes = len(np.unique(codes))
+        if n_codes != EXPECTED_SUBJECT_COUNT:
+            raise SeamMapError(
+                f"train_array column 0 holds {n_codes} subject codes, expected "
+                f"{EXPECTED_SUBJECT_COUNT}; it was not built with preprocess_data's "
+                "participant keying."
+            )
         for i, seg in enumerate(segments):
             lo, hi = seg["start_row"], seg["end_row"]
             if int(codes[lo]) != seg["subject_code"] or int(codes[hi - 1]) != seg["subject_code"]:
@@ -221,7 +246,7 @@ def build_sequences(
 
     :param train_array: (N, 5) float array from load_dataset('subset_specific', 'loso_G')
     :param seam_map_path: path to data/seam_map.json
-    :param val_subject_code: LabelEncoder subject code held out for validation (0-13)
+    :param val_subject_code: LabelEncoder subject code held out for validation (0-23)
     :param seq_len: sequence length in samples (default 500 = 10 s at 50 Hz)
     :param overlap: overlap fraction between consecutive sequences of a long segment
     :param min_segment_len: segments shorter than this are discarded entirely

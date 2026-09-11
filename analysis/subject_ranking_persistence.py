@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-EXPECTED_SUBJECTS = 14
+EXPECTED_SUBJECTS = 24
 RANK_MOVE_FLAG_THRESHOLD = 3
 
 # metric -> (column name, True if higher value = harder/worse)

@@ -90,7 +90,7 @@ HardFail = wp.HardFail
 SAMPLING_RATE = 50
 
 EXPECTED_FOLD_COUNT = 5
-ALL_SUBJECT_FOLD_COUNT = 14      # a --dense run with --loso_subjects unset covers every subject
+ALL_SUBJECT_FOLD_COUNT = 24      # a windowed or --dense run over every participant
 UNCOVERED = -1
 
 # Recorded window-level anchors, verbatim from grid_read.py:61-62. Printed for
@@ -329,11 +329,12 @@ def process_dir(results_dir, labels_df, candidate_cache, npz_pattern):
     candidates = candidate_cache[key]
 
     folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
-    if len(folds) != EXPECTED_FOLD_COUNT:
+    if len(folds) not in (EXPECTED_FOLD_COUNT, ALL_SUBJECT_FOLD_COUNT):
         fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
-             f"{EXPECTED_FOLD_COUNT}: {folds}")
+             f"{EXPECTED_FOLD_COUNT} (the LOSO baseline) or {ALL_SUBJECT_FOLD_COUNT} "
+             f"(every subject): {folds}")
 
-    npz_paths = discover_fold_npz(results_dir, folds, npz_pattern)
+    npz_paths = discover_fold_npz(results_dir, folds, npz_pattern, expect_count=len(folds))
 
     fold_rows = []
     pred_parts, true_parts = [], []
@@ -390,8 +391,8 @@ def process_dir(results_dir, labels_df, candidate_cache, npz_pattern):
         win_true_parts.append(y_true_win)
 
     subjects = [r["subject"] for r in fold_rows]
-    if len(set(subjects)) != EXPECTED_FOLD_COUNT:
-        fail(f"{results_dir}: {EXPECTED_FOLD_COUNT} folds resolved to {len(set(subjects))} distinct "
+    if len(set(subjects)) != len(fold_rows):
+        fail(f"{results_dir}: {len(fold_rows)} folds resolved to {len(set(subjects))} distinct "
              f"subjects {sorted(subjects)} -- the resolution is not a bijection")
 
     s_pred = np.concatenate(pred_parts)
@@ -428,7 +429,7 @@ def process_dir(results_dir, labels_df, candidate_cache, npz_pattern):
 # dense (per-sample) processing
 # --------------------------------------------------------------------------- #
 
-DENSE_NPZ_RE = re.compile(r"^preds_([0-9a-f]{4})_.*\.npz$")
+DENSE_NPZ_RE = re.compile(r"^preds_([0-9a-f]{4}_(?:eu|na))_.*\.npz$")   # fold = <id>_<eu|na>
 
 
 def resolve_dense_folds(results_dir, cfg):
@@ -838,7 +839,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--results_dir", action="append", nargs="+", required=True, metavar="DIR",
-                        help="Run dir holding cfg.txt and the 5 per-fold npz files. Repeatable, "
+                        help="Run dir holding cfg.txt and one npz per fold (5 or 24 folds). Repeatable, "
                              "and each occurrence accepts several dirs; all are pooled into one "
                              "comparison table in the order given.")
     parser.add_argument("--labels", default="labels_export.csv.gz",
@@ -851,8 +852,9 @@ def main():
     parser.add_argument("--seam_map", default="data/seam_map.json",
                         help="Seam map used by --dense to rebuild each fold's kept-sample stream.")
     parser.add_argument("--allow_partial_folds", action="store_true",
-                        help="Score a run with fewer than 5 folds (a smoke test). Off by default "
-                             "so a truncated run cannot be mistaken for a complete one.")
+                        help="Score a --dense run covering neither 5 nor 24 folds (a smoke test). "
+                             "Off by default so a truncated run cannot be mistaken for a complete "
+                             "one. The windowed path always requires 5 or 24.")
     parser.add_argument("--npz_pattern", default=None,
                         help="Explicit glob containing '{fold}', overriding npz auto-detection. "
                              "Only needed when a run dir holds more than one npz per fold.")

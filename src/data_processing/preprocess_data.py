@@ -15,6 +15,25 @@ from sklearn import preprocessing
 
 pd.options.mode.chained_assignment = None
 
+# data_creation.py:38 renamed the raw filename's 'na' site suffix to location 'us'.
+LOCATION_TO_SUFFIX = {'eu': 'eu', 'us': 'na'}
+
+
+def participant_keys(data):
+    """
+    Participant key per row of a hangtime_*_data.csv frame: the raw filename stem
+    <subject>_<eu|na>, rebuilt from the location (col 0) and subject (col 3) columns.
+
+    :param data: pandas DataFrame read with header=None
+    :return: numpy object array of str, one key per row
+    """
+    location = data.iloc[:, 0].to_numpy()
+    suffix = pd.Series(location).map(LOCATION_TO_SUFFIX).to_numpy()
+    unknown = sorted(map(str, set(location[pd.isna(suffix)])))
+    if unknown:
+        raise ValueError(f'unrecognized location value(s) {unknown}; expected {sorted(LOCATION_TO_SUFFIX)}')
+    return data.iloc[:, 3].astype(str).to_numpy() + '_' + suffix
+
 
 def load_dataset(test_type, test_case, include_void=False):
     """
@@ -38,16 +57,20 @@ def load_dataset(test_type, test_case, include_void=False):
     data = pd.concat((data_drill, data_warmup, data_game), axis=0)
     data_dandw = pd.concat((data_drill, data_warmup), axis=0)
 
-    # force subject column to string to avoid mixed dtype
-    data.iloc[:, 3] = data.iloc[:, 3].astype(str)
-    data_dandw.iloc[:, 3] = data_dandw.iloc[:, 3].astype(str)
-    data_drill.iloc[:, 3] = data_drill.iloc[:, 3].astype(str)
-    data_game.iloc[:, 3] = data_game.iloc[:, 3].astype(str)
-
-    subjects = data.iloc[:, 3].unique()
+    # Key participants on the raw filename stem, <id>_<eu|na>, not on the subject column
+    # alone: the 4-hex id is only unique within a site (data/raw/meta.txt is keyed by
+    # location, and 0846_eu / 0846_na are different people), so col 3 by itself merges
+    # 24 participants into 14.
+    data.iloc[:, 3] = participant_keys(data)
+    data_dandw.iloc[:, 3] = participant_keys(data_dandw)
+    data_drill.iloc[:, 3] = participant_keys(data_drill)
+    data_game.iloc[:, 3] = participant_keys(data_game)
 
     le = preprocessing.LabelEncoder()
-    le.fit(subjects)
+    le.fit(data.iloc[:, 3])
+    # Name order must be code order: validation.py indexes args.subjects by LabelEncoder
+    # code, and classes_ is exactly the code -> name table.
+    subjects = le.classes_
 
     data.iloc[:, 3] = le.transform(data.iloc[:, 3])
     data_dandw.iloc[:, 3] = le.transform(data_dandw.iloc[:, 3])

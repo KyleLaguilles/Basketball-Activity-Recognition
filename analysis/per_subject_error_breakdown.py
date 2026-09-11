@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Per-subject breakdown of the walking <-> standing confusion, to check whether
-it is uniform across the 14 LOSO subjects or concentrated in a few.
+it is uniform across the 24 LOSO subjects or concentrated in a few.
 
 Reads purity_per_window.csv (written by analysis/purity_stratified_scoring.py)
 -- no window reconstruction needed, everything required is already in that
@@ -189,8 +189,8 @@ def main():
                  "analysis/purity_stratified_scoring.py on this log_dir first.")
     n_subjects = df["subject"].nunique()
     print(f"Loaded {len(df)} windows across {n_subjects} subject(s) from: {input_path}")
-    if n_subjects != 14:
-        print(f"WARNING: expected 14 subjects, got {n_subjects}.")
+    if n_subjects != 24:
+        print(f"WARNING: expected 24 subjects, got {n_subjects}.")
 
     table = build_subject_table(df)
 

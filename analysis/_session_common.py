@@ -6,18 +6,23 @@ Not a runnable script -- the leading underscore marks it as a helper module, the
 role _dense_common.py plays for the dense diagnostics and _loso_common.py for the
 windowed ones.
 
-WHAT A SESSION IS, and why this module exists at all
-----------------------------------------------------
-analysis/boracle_duration_bias.py:63-70 states that "no session identifier survives
-anywhere in the pipeline, so one subject == one contiguous block == the finest
-granularity available". That was true of the training pipeline, and it is no longer
-true of the repository: data/seam_map.json carries a `recording` field on every
-segment, derived at scripts/build_seam_map.py:174 from the raw filename
-(data/raw/<recording>.csv). That field is the session identifier, recovered from the
-timestamps the training pipeline dropped.
+WHAT A SESSION IS
+-----------------
+The dataset holds 24 participants with one recording each: data/raw/<recording>.csv,
+carried on every segment of data/seam_map.json as the `recording` field
+(scripts/build_seam_map.py). A participant is keyed by that filename stem,
+<4-hex id>_<eu|na>. The 4-hex id alone is NOT a participant: it is only unique within
+a site (data/raw/meta.txt is keyed by location), and the 10 ids that appear under both
+suffixes belong to different people -- 2dd9_eu and 2dd9_na differ in age, sex, height
+and skill level. Training keys its LOSO subjects the same way
+(preprocess_data.participant_keys), so every unit here is one and the same:
 
-A `recording` is a real recording session, not a filename convention. Checked against
-the raw timestamp column:
+    session := recording := participant := LOSO subject      (24 in the full dataset)
+
+and the seam map's subject_name equals its recording on every segment.
+
+The suffix names the capture site, and each site was a single capture event, checked
+against the raw timestamp column:
 
     every recording spans exactly ONE calendar date
     the 13 *_eu recordings  -> 2022-02-26, all starting within ~4 s of each other,
@@ -25,24 +30,18 @@ the raw timestamp column:
     the 11 *_na recordings  -> 2022-05-20, all starting within ~4 s of each other,
                                each spanning ~1.44 h
 
-So the dataset holds two CAPTURE EVENTS (an EU gym day and a US gym day) and 24
-recordings, where one recording is one participant's continuous wristband stream
-within one capture event. That is the unit these diagnostics call a session:
-
-    session := recording := subject x capture-day       (24 in the full dataset)
-
-The two capture events themselves are NOT the unit -- n=2 makes every per-class
-statistic meaningless -- and the subject is too coarse, since 10 of the 14 subjects
-recorded on both days and their two sessions are months apart.
+The two capture events are reported for context only (session_header lists sessions
+by site); they are never the unit -- n=2 makes every per-class statistic meaningless.
 
 COORDINATES, and why both prediction paths land in the same one
 ---------------------------------------------------------------
 A windowed npz holds one entry per WINDOW; a dense npz holds one per SAMPLE. Neither
-carries a session marker. Both are reduced here to one array per subject in RAW
-SUBJECT-LOCAL coordinates -- index i is the i-th row of that subject's slice of the
-label export -- where a session is a contiguous half-open interval:
+carries a session marker, and none is needed: each fold is one participant, so one
+session. Both are reduced here to one array per subject in RAW SUBJECT-LOCAL
+coordinates -- index i is the i-th row of that subject's slice of the label export --
+and the session is the whole of that array:
 
-    4d70_eu = [0, 61539)      4d70_na = [61539, 126839)
+    4d70_eu = [0, 61539)      4d70_na = [0, 65300)      (two different participants)
 
 Three facts make that mapping exact, and all three are asserted in load_sessions()
 rather than assumed:
@@ -62,8 +61,7 @@ The two paths do not cover the same samples:
 
   windowed  loses up to `step` trailing samples per subject, because the last window
             ends before the stream does (slf.expand_last_window_wins leaves them
-            UNCOVERED). Measured on the 5-fold baseline at step=25: 0, 14, 0, 1, 0, 5,
-            0, 11, 0, 2 samples -- always at the tail of that subject's LAST session.
+            UNCOVERED) -- always at the tail of that participant's one session.
   dense     loses whole segments shorter than dense_min_seg (zero of them at 25).
 
 Comparing a windowed estimate against a truth the dense run scored but the windowed
@@ -96,10 +94,10 @@ fail = slf.fail
 SAMPLING_RATE = slf.SAMPLING_RATE
 UNCOVERED = slf.UNCOVERED
 
-# 24 recordings over 14 subjects; the 5-subject LOSO baseline covers 10 of them
-# because each of those five recorded on both capture days.
+# One session per participant (each participant is one recording), so the baseline's
+# session count is its fold count and the full dataset's is 24.
 EXPECTED_SESSION_COUNT_ALL = 24
-EXPECTED_SESSION_COUNT_BASELINE = 10
+EXPECTED_SESSION_COUNT_BASELINE = len(wp.EXPECTED_FOLDS)
 
 # The five basketball classes; rebound/layup/shot are the jump-and-land events an
 # injury model is built around. Spelled as in boracle_duration_bias.py so the two
@@ -206,10 +204,11 @@ def _windowed_subject_arrays(results_dir, labels_df, npz_pattern, allow_partial)
 
     sw_length, sw_overlap, win_len, step = slf.derive_windowing(cfg, results_dir)
     folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
-    expect = len(folds) if allow_partial else slf.EXPECTED_FOLD_COUNT
-    if not allow_partial and len(folds) != slf.EXPECTED_FOLD_COUNT:
+    expect = len(folds)
+    if not allow_partial and len(folds) not in (slf.EXPECTED_FOLD_COUNT, slf.ALL_SUBJECT_FOLD_COUNT):
         fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
-             f"{slf.EXPECTED_FOLD_COUNT}: {folds}. Pass --allow_partial_folds for a smoke test.")
+             f"{slf.EXPECTED_FOLD_COUNT} (the LOSO baseline) or {slf.ALL_SUBJECT_FOLD_COUNT} "
+             f"(every subject): {folds}. Pass --allow_partial_folds for a smoke test.")
 
     npz_paths = slf.discover_fold_npz(results_dir, folds, npz_pattern, expect_count=expect)
     candidates = slf.build_candidates(labels_df, win_len, step)
@@ -375,13 +374,13 @@ def paired_sessions(win_arrays, den_arrays, segments):
 
 
 def check_session_count(sessions, allow_partial, label=""):
-    """A session set that is neither the 10-session baseline nor all 24 is a hard fail."""
+    """A session set that is neither the baseline's sessions nor all 24 is a hard fail."""
     n = len(sessions)
     if not allow_partial and n not in (EXPECTED_SESSION_COUNT_BASELINE,
                                        EXPECTED_SESSION_COUNT_ALL):
         fail(f"{label}resolved {n} sessions ({sorted(sessions)}), expected "
-             f"{EXPECTED_SESSION_COUNT_BASELINE} (the 5-subject LOSO baseline, each subject "
-             f"recorded on both capture days) or {EXPECTED_SESSION_COUNT_ALL} (all subjects). "
+             f"{EXPECTED_SESSION_COUNT_BASELINE} (the LOSO baseline, one session per "
+             f"participant) or {EXPECTED_SESSION_COUNT_ALL} (all subjects). "
              "Pass --allow_partial_folds to score a partial run anyway.")
     return n
 
@@ -395,7 +394,7 @@ def add_session_args(parser):
                         help="Segment map from scripts/build_seam_map.py; supplies the "
                              "`recording` field this analysis calls a session.")
     parser.add_argument("--allow_partial_folds", action="store_true",
-                        help="Score a run covering neither 5 nor 14 folds (a smoke test).")
+                        help="Score a run covering neither 5 nor 24 folds (a smoke test).")
     return parser
 
 

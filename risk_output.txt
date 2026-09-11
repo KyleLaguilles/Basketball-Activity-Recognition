@@ -1,0 +1,309 @@
+================================================================================================================
+RISK-PROXY SENSITIVITY -- does duration bias move injury-risk stratification?
+================================================================================================================
+
+  windowed run   : 2026-07-17_07-56-30   [logs/subset_specific/loso_G/inceptioncontext/2026-07-17_07-56-30]
+                   sw_length=1.0s sw_overlap=50% -> win_len=50 step=25 samples
+  dense run      : dense_b10_seed1   [logs/subset_specific/loso_G/inceptioncontext/2026-09-04_16-04-41_dense_b10_seed1]
+                   dense_seq_len=500 dense_min_seg=25
+  dense all-14   : dense_b10_all14_seed1   [logs/subset_specific/loso_G/inceptioncontext/2026-09-04_17-48-10_dense_b10_all14_seed1]
+                   dense_seq_len=500 dense_min_seg=25   24 sessions
+
+  THE PROXY IS ILLUSTRATIVE. It does not predict injuries; no injury labels exist
+  in this dataset. It is a monotone function of per-class time-on-task, used to ask
+  whether duration bias would change a downstream risk ORDERING.
+
+sessions       : 10 recordings over 5 subjects
+  capture day  : eu   5 session(s)  4d70_eu, 9bd4_eu, a0da_eu, b512_eu, ce9d_eu
+  capture day  : na   5 session(s)  4d70_na, 9bd4_na, a0da_na, b512_na, ce9d_na
+
+  n = 10 paired sessions. Every duration is scored on the common
+  covered mask of the two runs, against one truth asserted equal across both.
+
+================================================================================================================
+[1] THE RISK PROXY -- tiers, weights, and the assertion that guards them
+================================================================================================================
+
+  R_c(s) = sum_k w_{tier(k)} * f_{c,k}(s),  f = fraction of session s in class k
+  under condition c. Fractions, not seconds: session length divides out.
+
+  tier 3 (landing/explosive) : shot, rebound, layup
+  tier 2 (locomotion/load  ) : dribbling, pass, running
+  tier 1 (rest/low         ) : walking, standing, sitting
+
+  vector             w3     w2     w1   ordering
+  ----------------------------------------------
+  A_linear            3      2      1   3 > 2 > 1 >= 0  OK
+  B_moderate          5      2      1   5 > 2 > 1 >= 0  OK
+  C_strong           10      3      1   10 > 3 > 1 >= 0  OK
+  D_compressed        5      3      1   5 > 3 > 1 >= 0  OK
+  E_zero_rest         3      2      0   3 > 2 > 0 >= 0  OK
+  ----------------------------------------------
+
+  All 5 vectors satisfy w3 > w2 > w1 >= 0 and TIER_MAP covers all
+  9 classes exactly; both were asserted before any run was loaded.
+
+================================================================================================================
+[2] ANCHOR REPRODUCTION -- rebound duration-rank rho, vs session_rank_stability.py
+================================================================================================================
+
+  The risk scores are built from the same per-session counts these correlations
+  use. If they have moved, the loading path has changed and nothing below is
+  comparable to previously reported numbers.
+
+  quantity                   observed     anchor      delta   verdict
+  -----------------------------------------------------------------------
+  paired n=10 win_est          0.5532     0.5530     0.0002   MATCH
+  paired n=10 den_est          0.1152     0.1150     0.0002   MATCH
+  dense-only n=24 rho          0.5445     0.5440     0.0005   MATCH
+  dense-only n=24 p            0.0059     0.0059     0.0000   MATCH
+  -----------------------------------------------------------------------
+
+  All anchors reproduce; the per-session counts are the ones previously reported.
+
+================================================================================================================
+[3] THE SCORES -- weight vector A_linear, spelled out
+================================================================================================================
+
+  Read this table first: the correlations below compress it into single numbers.
+  'tert' is the risk tertile, 1 = highest risk. Sessions are listed worst-first
+  by truth score.
+
+  session         true_R   tert  windowed_R        d  tert     dense_R        d  tert
+  -----------------------------------------------------------------------------------
+  9bd4_na         1.5423      1      1.5001  -0.0421     1      1.4935  -0.0488     1
+  ce9d_na         1.4913      1      1.5076  +0.0163     1      1.4999  +0.0086     1
+  4d70_na         1.4429      1      1.3793  -0.0636     1      1.4069  -0.0359     1
+  ce9d_eu         1.4411      1      1.4390  -0.0021     1      1.4301  -0.0110     1
+  4d70_eu         1.3641      2      1.3240  -0.0401     2      1.3307  -0.0333    3*
+  a0da_na         1.3574      2      1.3446  -0.0128     2      1.3560  -0.0014     2
+  9bd4_eu         1.3338      2      1.3352  +0.0014     2      1.3804  +0.0466     2
+  b512_na         1.2846      3      1.2888  +0.0042     3      1.2729  -0.0117     3
+  a0da_eu         1.2768      3      1.2805  +0.0036     3      1.3409  +0.0641    2*
+  b512_eu         1.1480      3      1.1572  +0.0092     3      1.1654  +0.0174     3
+  -----------------------------------------------------------------------------------
+
+  '*' marks a session whose tertile differs from truth's. 'd' is the signed score
+  deviation: positive = this condition overstates the session's risk.
+
+================================================================================================================
+[4] PRIMARY METRICS (n=10 paired) -- pre-reg 5.1(a)-(d)
+================================================================================================================
+
+  rho close to +1 means the condition orders the 10 sessions the way truth does.
+  MASD is the mean absolute score deviation, MRSD the same relative to truth's
+  score. 'flips' counts sessions landing in a different tertile than truth. At
+  n=10 the p-values are weak evidence and the difference between two rho values
+  from the same sessions is not tested.
+
+  windowed             rho         p      MASD      MRSD   flips   of
+  -------------------------------------------------------------------
+  A_linear          +0.939    0.0001    0.0195    0.0138       0   10
+  B_moderate        +0.952    0.0000    0.0272    0.0189       0   10
+  C_strong          +0.939    0.0001    0.0607    0.0324       0   10
+  D_compressed      +0.939    0.0001    0.0391    0.0214       0   10
+  E_zero_rest       +0.939    0.0001    0.0441    0.0597       0   10
+  -------------------------------------------------------------------
+
+  dense                rho         p      MASD      MRSD   flips   of
+  -------------------------------------------------------------------
+  A_linear          +0.867    0.0012    0.0279    0.0205       2   10
+  B_moderate        +0.915    0.0002    0.0295    0.0210       2   10
+  C_strong          +0.927    0.0001    0.0654    0.0357       2   10
+  D_compressed      +0.867    0.0012    0.0558    0.0326       2   10
+  E_zero_rest       +0.867    0.0012    0.0579    0.0891       2   10
+  -------------------------------------------------------------------
+
+================================================================================================================
+[5] ROBUSTNESS -- does dense beat windowed under every weight vector?
+================================================================================================================
+
+  Pre-reg section 6: the claim is robust only if, under ALL five vectors, dense
+  gives rho at least as high, tertile flips no more numerous, and MASD strictly
+  lower. Ties count toward the claim on the first two ('or both high', 'or both
+  zero'); MASD is read strictly, as written.
+
+  vector           rho_win   rho_den  flip_w  flip_d   MASD_win   MASD_den   rho  flip  MASD  verdict
+  ---------------------------------------------------------------------------------------------------
+  A_linear          +0.939    +0.867       0       2     0.0195     0.0279    NO    NO    NO  no
+  B_moderate        +0.952    +0.915       0       2     0.0272     0.0295    NO    NO    NO  no
+  C_strong          +0.939    +0.927       0       2     0.0607     0.0654    NO    NO    NO  no
+  D_compressed      +0.939    +0.867       0       2     0.0391     0.0558    NO    NO    NO  no
+  E_zero_rest       +0.939    +0.867       0       2     0.0441     0.0579    NO    NO    NO  no
+  ---------------------------------------------------------------------------------------------------
+
+================================================================================================================
+[6] CLASS DECOMPOSITION -- weight vector D_compressed (largest windowed/dense MASD gap)
+================================================================================================================
+
+  D_compressed separates the two conditions most: |MASD_win - MASD_den| = 0.0167.
+  Each row is that class's mean SIGNED contribution to the score deviation,
+  w_k * mean_s(f_est,k(s) - f_true,k(s)). The rows sum to the mean signed score
+  deviation; a class with a large positive contribution is inflating risk.
+
+  class         tier    w_k  true_frac   windowed_contrib      dense_contrib  driver
+  ----------------------------------------------------------------------------------
+  dribbling  *     2      3     0.0388           +0.01328           +0.00724 
+  shot       *     3      5     0.0041           +0.00399           -0.00124 
+  pass       *     2      3     0.0157           +0.01355           +0.02517 
+  rebound    *     3      5     0.0087           -0.02557           -0.01178 
+  layup      *     3      5     0.0071           -0.01287           -0.02032 
+  walking          1      1     0.5130           -0.09061           -0.02979   <<< largest win/den gap
+  running          2      3     0.2740           -0.02327           +0.00593 
+  standing         1      1     0.0442           +0.07722           +0.01839 
+  sitting          1      1     0.0944           +0.01909           +0.00528 
+  ----------------------------------------------------------------------------------
+  TOTAL                         1.0000           -0.02519           -0.00111
+
+  The true_frac column sums to 1.0 by construction. The contribution totals are
+  the mean SIGNED deviations, so they can be small while MASD is large: over- and
+  under-counted classes cancel in the total and do not cancel in MASD.
+
+================================================================================================================
+[7a] CALIBRATION FACTORS -- fitted PER CONDITION, leave-one-subject-out
+================================================================================================================
+
+  k = sum(true) / sum(pred) over the held-in subjects, the pooling rule reused
+  from calibration_factors.loo_factors. Only the pre-registered classes are
+  corrected: pass, walking, standing.
+  The two conditions get SEPARATE factors -- a shared table would correct one
+  path with the other path's bias.
+
+  condition      class            k_all   loo_min   loo_max  spread/k   stability
+  -------------------------------------------------------------------------------
+  windowed       pass            0.7720    0.7307    0.8089    0.1013      STABLE
+  windowed       walking         1.2139    1.1947    1.2365    0.0344      STABLE
+  windowed       standing        0.3631    0.2849    0.4246    0.3849       loose
+  dense          pass            0.6459    0.5935    0.7066    0.1751      STABLE
+  dense          walking         1.0601    1.0316    1.0809    0.0466      STABLE
+  dense          standing        0.7201    0.5160    0.9590    0.6153    UNSTABLE
+  -------------------------------------------------------------------------------
+
+  spread/k = (loo_max - loo_min) / k_all: STABLE < 0.25, loose < 0.50,
+  UNSTABLE >= 0.50 -- the same thresholds calibration_factors.py [2] uses.
+
+  NOT A CONSTANT -- these factors move with the held-in subjects, so the
+  calibrated results below inherit that instability:
+    windowed   standing   loose     k=0.3631 LOO range [0.2849, 0.4246]
+    dense      standing   UNSTABLE  k=0.7201 LOO range [0.5160, 0.9590]
+
+================================================================================================================
+[7b] RENORMALIZATION DRIFT -- what correction breaks and the score needs back
+================================================================================================================
+
+  Scaling three classes by three constants destroys the timeline partition: the
+  nine corrected durations no longer sum to the session. A weighted sum of
+  FRACTIONS needs them to, so they are renormalized. This is the size of what
+  renormalization absorbs -- an upper bound on how much of [7d] is the renormalizer
+  rather than the correction.
+
+  condition            mean        min        max   mean|drift|
+  -------------------------------------------------------------
+  windowed          +0.0105    -0.0360    +0.0452        0.0261
+  dense             +0.0092    -0.0234    +0.0239        0.0139
+  -------------------------------------------------------------
+
+  Read as a fraction of session length: +0.05 means correction added 5% of the
+  session's duration, all of which renormalization then removes proportionally.
+
+================================================================================================================
+[7c] CALIBRATION EFFECT -- pre-reg 5.2(f)
+================================================================================================================
+
+  Negative deltas are improvements. Calibration is fitted to repair pooled
+  DURATION bias; whether that helps a per-session risk SCORE is a different
+  question, and this table is the only place it is answered.
+
+  condition    vector              MASD   MASD_cal     dMASD      MRSD   MRSD_cal     dMRSD   flip  flip_cal
+  ----------------------------------------------------------------------------------------------------------
+  windowed     A_linear          0.0195     0.0211   +0.0015    0.0138     0.0149   +0.0011      0         0
+  windowed     B_moderate        0.0272     0.0342   +0.0070    0.0189     0.0241   +0.0051      0         0
+  windowed     C_strong          0.0607     0.0790   +0.0183    0.0324     0.0424   +0.0100      0         0
+  windowed     D_compressed      0.0391     0.0422   +0.0031    0.0214     0.0230   +0.0016      0         0
+  windowed     E_zero_rest       0.0441     0.0433   -0.0009    0.0597     0.0558   -0.0038      0         0
+  ----------------------------------------------------------------------------------------------------------
+  dense        A_linear          0.0279     0.0321   +0.0042    0.0205     0.0234   +0.0029      2         2
+  dense        B_moderate        0.0295     0.0363   +0.0068    0.0210     0.0255   +0.0046      2         2
+  dense        C_strong          0.0654     0.0791   +0.0137    0.0357     0.0425   +0.0068      2         2
+  dense        D_compressed      0.0558     0.0641   +0.0083    0.0326     0.0369   +0.0044      2         2
+  dense        E_zero_rest       0.0579     0.0662   +0.0083    0.0891     0.0965   +0.0074      2         2
+  ----------------------------------------------------------------------------------------------------------
+
+  windowed   calibration lowers MASD under 1 of 5 weight vectors.
+  dense      calibration lowers MASD under 0 of 5 weight vectors.
+
+================================================================================================================
+[7d] CALIBRATED VARIANT (n=10 paired) -- pre-reg 5.2(f)
+================================================================================================================
+
+  rho close to +1 means the condition orders the 10 sessions the way truth does.
+  MASD is the mean absolute score deviation, MRSD the same relative to truth's
+  score. 'flips' counts sessions landing in a different tertile than truth. At
+  n=10 the p-values are weak evidence and the difference between two rho values
+  from the same sessions is not tested.
+
+  windowed             rho         p      MASD      MRSD   flips   of
+  -------------------------------------------------------------------
+  A_linear          +0.939    0.0001    0.0211    0.0149       0   10
+  B_moderate        +0.939    0.0001    0.0342    0.0241       0   10
+  C_strong          +0.927    0.0001    0.0790    0.0424       0   10
+  D_compressed      +0.939    0.0001    0.0422    0.0230       0   10
+  E_zero_rest       +0.939    0.0001    0.0433    0.0558       0   10
+  -------------------------------------------------------------------
+
+  dense                rho         p      MASD      MRSD   flips   of
+  -------------------------------------------------------------------
+  A_linear          +0.879    0.0008    0.0321    0.0234       2   10
+  B_moderate        +0.927    0.0001    0.0363    0.0255       2   10
+  C_strong          +0.915    0.0002    0.0791    0.0425       2   10
+  D_compressed      +0.879    0.0008    0.0641    0.0369       2   10
+  E_zero_rest       +0.879    0.0008    0.0662    0.0965       2   10
+  -------------------------------------------------------------------
+
+
+================================================================================================================
+[8] DENSE-ONLY PANEL (n=24) -- pre-reg 5.2(g)
+================================================================================================================
+
+  Dense against truth over all 24 sessions. There is no windowed all-subject run
+  in logs/, so there is no counterpart column here.
+  This panel is NOT comparable to the paired rho above: that is computed on a
+  different and smaller session set (n=10).
+
+  vector               rho         p      MASD      MRSD   flips   of
+  -------------------------------------------------------------------
+  A_linear          +0.925    0.0000    0.0352    0.0260       2   24
+  B_moderate        +0.924    0.0000    0.0500    0.0357       4   24
+  C_strong          +0.917    0.0000    0.1123    0.0619       4   24
+  D_compressed      +0.925    0.0000    0.0705    0.0415       2   24
+  E_zero_rest       +0.930    0.0000    0.0685    0.1062       2   24
+  -------------------------------------------------------------------
+
+================================================================================================================
+[9] VERDICT -- pre-reg sections 6 and 7
+================================================================================================================
+
+  Dense beats windowed on all three criteria under 0 of 5 weight vectors.
+    dense fails  : A_linear, B_moderate, C_strong, D_compressed, E_zero_rest
+
+  MASD difference (dense - windowed), negative favours dense:
+    A_linear         +0.0084
+    B_moderate       +0.0023
+    C_strong         +0.0047
+    D_compressed     +0.0167
+    E_zero_rest      +0.0138
+
+  WINDOWED WINS (section 7, row 4). This is the unexpected outcome. Before
+  reporting it, investigate whether the windowed path's overcount of pass and
+  walking accidentally improves the tier 1/2 terms -- [6] decomposes D_compressed
+  for exactly that question. It may indicate a proxy design issue.
+
+  n = 10. Five weight vectors over the same 10 sessions are five views of one
+  dataset, not five independent experiments. The 'all five' bar is a robustness
+  check against weighting choice, not a multiple-comparison correction.
+
+================================================================================================================
+Read [5] for the robustness bar, [6] for which classes drive the gap, [9] for the
+pre-registered outcome. The proxy is illustrative; it does not predict injuries.
+Nothing was written; this script is read-only.
+================================================================================================================

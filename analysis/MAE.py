@@ -6,7 +6,7 @@ Brandon's doc says the downstream injury goal depends on. Prints a table and
 writes two CSVs (summary + per-session).
 
 Input format (one file per LOSO fold / per saved test set):
-    predictions_best_<id>_<name>.csv  ->  pd.DataFrame(val_output).to_csv(...)
+    predictions_best_<id>_<eu|na>_<name>.csv  ->  pd.DataFrame(val_output).to_csv(...)
     column ","  = window index (ignored)
     column "0"  = PREDICTION   (val_output[:, 0])
     column "1"  = GROUND TRUTH (val_output[:, 1])
@@ -22,6 +22,8 @@ import glob
 import os
 import numpy as np
 import pandas as pd
+
+from _loso_common import SUBJECT_RE
 
 # ---- params (from your training command) ----
 SW_LENGTH = 1.0
@@ -39,7 +41,7 @@ TRUE_COL, PRED_COL = '1', '0'
 SESSION_COL = None
 
 # ---- one run dir per seed ----
-# loso  : point at the run folder (14 per-subject files -> per-subject breakdown)
+# loso  : point at the run folder (24 per-subject files -> per-subject breakdown)
 # split : point at the run folder for the global game number, OR at its
 #         'session_preds/' subfolder (after the validation.py patch) for per-subject
 RUN_DIRS = [
@@ -52,8 +54,14 @@ OUTPUT_DIR = '.'
 
 
 def session_id(path, multi):
+    if not multi:
+        return 'all_games'
     base = os.path.basename(path).replace('predictions_best_', '')
-    return base.split('_')[0] if multi else 'all_games'
+    # LOSO files are predictions_best_<id>_<eu|na>_<name>.csv: the participant key spans
+    # two _-tokens, so the first token alone would merge <id>_eu and <id>_na -- two
+    # different people -- into one session.
+    m = SUBJECT_RE.match(base)
+    return m.group(1) if m else base.split('_')[0]
 
 
 def load_file(path):

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 python src/main.py \
-    --loso_subjects b512,a0da,4d70,ce9d,9bd4 --save_val_npz \
+    --loso_subjects b512_na,a0da_eu,4d70_eu,ce9d_eu,9bd4_na --save_val_npz \
     --test_type subset_specific --test_case loso_G --network inceptioncontext \
     --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --epochs 40 --batch_size 100 \
     --optimizer adam --learning_rate 0.0001 --weight_decay 1e-06 --weights_init xavier_normal \

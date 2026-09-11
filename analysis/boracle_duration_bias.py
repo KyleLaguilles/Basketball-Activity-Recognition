@@ -107,6 +107,7 @@ fail = slf.fail
 SAMPLING_RATE = slf.SAMPLING_RATE
 
 EXPECTED_FOLD_COUNT = 5
+ALL_SUBJECT_FOLD_COUNT = slf.ALL_SUBJECT_FOLD_COUNT     # 24, every participant
 REQUIRED_SW_LENGTH = 1.0
 
 # The five basketball classes. rebound/layup/shot are the jump-and-land events an
@@ -241,10 +242,11 @@ def process_dir_dense(results_dir, labels_df, seam, npz_pattern, allow_partial):
              f"{seam['total_samples']}")
 
     folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
-    expect = len(folds) if allow_partial else EXPECTED_FOLD_COUNT
-    if not allow_partial and len(folds) != EXPECTED_FOLD_COUNT:
+    expect = len(folds)
+    if not allow_partial and len(folds) not in (EXPECTED_FOLD_COUNT, ALL_SUBJECT_FOLD_COUNT):
         fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
-             f"{EXPECTED_FOLD_COUNT}: {folds}. Pass --allow_partial_folds for a smoke test.")
+             f"{EXPECTED_FOLD_COUNT} (the LOSO baseline) or {ALL_SUBJECT_FOLD_COUNT} "
+             f"(every subject): {folds}. Pass --allow_partial_folds for a smoke test.")
     npz_paths = slf.discover_fold_npz(results_dir, folds, npz_pattern, expect_count=expect)
 
     fold_rows = [measure_fold_dense(f, npz_paths[f], segments, label_ids, results_dir,
@@ -281,21 +283,22 @@ def process_dir(results_dir, labels_df, npz_pattern):
              "framing and the recorded anchors do not; re-run against a 1s baseline dir.")
 
     folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
-    if len(folds) != EXPECTED_FOLD_COUNT:
+    if len(folds) not in (EXPECTED_FOLD_COUNT, ALL_SUBJECT_FOLD_COUNT):
         fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
-             f"{EXPECTED_FOLD_COUNT}: {folds}")
+             f"{EXPECTED_FOLD_COUNT} (the LOSO baseline) or {ALL_SUBJECT_FOLD_COUNT} "
+             f"(every subject): {folds}")
 
-    npz_paths = slf.discover_fold_npz(results_dir, folds, npz_pattern)
-    if len(npz_paths) != EXPECTED_FOLD_COUNT:
-        fail(f"{results_dir}: discovered {len(npz_paths)} folds, expected {EXPECTED_FOLD_COUNT}")
+    npz_paths = slf.discover_fold_npz(results_dir, folds, npz_pattern, expect_count=len(folds))
+    if len(npz_paths) != len(folds):
+        fail(f"{results_dir}: discovered {len(npz_paths)} folds, expected {len(folds)}")
 
     candidates = slf.build_candidates(labels_df, win_len, step)
     fold_rows = [measure_fold(f, npz_paths[f], candidates, labels_df, results_dir, win_len, step)
                  for f in sorted(npz_paths)]
 
     subjects = [r["subject"] for r in fold_rows]
-    if len(set(subjects)) != EXPECTED_FOLD_COUNT:
-        fail(f"{results_dir}: {EXPECTED_FOLD_COUNT} folds resolved to {len(set(subjects))} distinct "
+    if len(set(subjects)) != len(fold_rows):
+        fail(f"{results_dir}: {len(fold_rows)} folds resolved to {len(set(subjects))} distinct "
              f"subjects {sorted(subjects)} -- the resolution is not a bijection")
 
     totals = {k: np.sum([r[k] for r in fold_rows], axis=0)
@@ -369,7 +372,7 @@ def report_header(rec):
               f"min_segment_len={rec['min_segment_len']}, which the loader discards. "
               "0 at the default 25.")
     else:
-        print(f"\n  Uncovered trailing samples: {gap} ({secs(gap):.2f}s over {EXPECTED_FOLD_COUNT} folds, "
+        print(f"\n  Uncovered trailing samples: {gap} ({secs(gap):.2f}s over {len(rec['folds'])} folds, "
               f"at most `step`={rec['step']} per fold).")
     print("  Every table below scores COVERED samples only, so bias is attributable to")
     print("  misclassification rather than to coverage. The full-raw column in [1] shows what")
@@ -501,7 +504,7 @@ def report_per_fold(rec):
     print("=" * 108)
     print("\n  One column per fold (== per subject; there is no session axis in this dataset --")
     print("  see the module docstring). Values are bias_pct = (est - true) / true * 100 under the")
-    print(f"  headline pairing. n = {EXPECTED_FOLD_COUNT}: sign agreement is reported as a count, and")
+    print(f"  headline pairing. n = {len(rec['folds'])}: sign agreement is reported as a count, and")
     print("  no significance test is computed -- a p-value on five folds would be noise.\n")
 
     folds = rec["folds"]
@@ -551,7 +554,7 @@ def report_per_fold(rec):
                   f"{n_under}/{n_used}")
     else:
         print(f"\n  No class flips sign: every class biases the same direction in all "
-              f"{EXPECTED_FOLD_COUNT} folds, so")
+              f"{len(folds)} folds, so")
         print("  the pooled direction in [1] is not an artifact of averaging opposing subjects.")
 
     n_zero = int((~np.isfinite(per_fold_pct)).sum())
@@ -586,7 +589,7 @@ def report_conservation(rec):
             print(f"    {f['fold']:<6} {f['subject']:<8} {e:>12.4f} {g:>12.4f} {e - g:>+12.6f}")
         return
 
-    gap_samples = EXPECTED_FOLD_COUNT * (rec["win_len"] - rec["step"])
+    gap_samples = len(rec["folds"]) * (rec["win_len"] - rec["step"])      # n_folds * (win_len - step)
     print(f"\n  n_covered           = {rec['n_covered']} samples = {secs(rec['n_covered']):.2f}s")
     print(f"  n_windows * step    = {rec['n_windows'] * rec['step']} samples = "
           f"{secs(rec['n_windows'] * rec['step']):.2f}s")
@@ -719,7 +722,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--results_dir", required=True, metavar="DIR",
-                        help="Baseline run dir holding cfg.txt and the 5 per-fold npz files. "
+                        help="Baseline run dir holding cfg.txt and one npz per fold (5 or 24 folds). "
                              "sw_length must be 1.0.")
     parser.add_argument("--labels", default="labels_export.csv.gz",
                         help="Exported per-sample labels (columns: subject, label), original row order.")
@@ -732,7 +735,8 @@ def main():
     parser.add_argument("--seam_map", default="data/seam_map.json",
                         help="Seam map used by --dense to rebuild each fold's kept-sample stream.")
     parser.add_argument("--allow_partial_folds", action="store_true",
-                        help="Read a run with fewer than 5 folds (a smoke test).")
+                        help="Read a --dense run covering neither 5 nor 24 folds (a smoke test). "
+                             "The windowed path always requires 5 or 24.")
     args = parser.parse_args()
 
     labels_df = wp.load_labels(args.labels)

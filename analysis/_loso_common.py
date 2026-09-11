@@ -24,6 +24,7 @@ convention as analysis/pooled_per_class.py:
 
 import glob
 import os
+import re
 import sys
 from collections import Counter
 
@@ -35,7 +36,14 @@ CLASS_NAMES = [
     "walking", "running", "standing", "sitting",
 ]
 N_CLASSES = len(CLASS_NAMES)
-EXPECTED_SUBJECTS = 14
+EXPECTED_SUBJECTS = 24
+
+# Participant key <4-hex id>_<eu|na> (preprocess_data.participant_keys): the raw filename
+# stem, rebuilt from the game CSV's location (col 0) and subject (col 3) columns.
+# data_creation.py:38 wrote the filename's 'na' suffix into the location column as 'us'.
+LOCATION_COL = 0
+LOCATION_TO_SUFFIX = {"eu": "eu", "us": "na"}
+SUBJECT_RE = re.compile(r"^([0-9a-f]{4}_(?:eu|na))(?:_|$)")
 
 VOID_RAW_LABEL = "void_class"
 RAW_LABEL_TO_ADJUSTED = {name: idx for idx, name in enumerate(CLASS_NAMES)}
@@ -52,28 +60,32 @@ def parse_subjects(paths):
     """
     Recover subject IDs from filenames: predictions_best_{subject}_{runname}.csv
     (identical logic to analysis/pooled_per_class.py's parse_subjects.)
+
+    The subject is matched by its known shape, <4-hex id>_<eu|na>, not inferred by
+    stripping the longest _-delimited suffix all files share as the run name: on a
+    single-site run every file also shares the site token, so that inference strips it
+    and collapses 0846_eu back to 0846. Returns None when a file does not start with a
+    participant key, or two files resolve to the same one.
     """
     stems = [os.path.splitext(os.path.basename(p))[0] for p in paths]
     bare = [s[len("predictions_best_"):] for s in stems]
-    parts_list = [b.split("_") for b in bare]
-    n_min = min(len(p) for p in parts_list)
-
-    suffix_len = 0
-    for i in range(1, n_min):
-        tail = "_".join(parts_list[0][-i:])
-        if all("_".join(p[-i:]) == tail for p in parts_list):
-            suffix_len = i
-        else:
-            break
-
-    if suffix_len == 0:
-        subjects = ["_".join(p) for p in parts_list]
-    else:
-        subjects = ["_".join(p[:-suffix_len]) for p in parts_list]
-
-    if any(s == "" for s in subjects) or len(set(subjects)) != len(subjects):
+    matches = [SUBJECT_RE.match(b) for b in bare]
+    if any(m is None for m in matches):
+        return None
+    subjects = [m.group(1) for m in matches]
+    if len(set(subjects)) != len(subjects):
         return None
     return subjects
+
+
+def participant_keys(location, subject):
+    """<id>_<eu|na> per row, from the game CSV's location and subject column Series."""
+    suffix = location.map(LOCATION_TO_SUFFIX)
+    if suffix.isna().any():
+        sys.exit(f"Error: unrecognized location value(s) "
+                 f"{sorted(map(str, set(location[suffix.isna()])))}; "
+                 f"expected {sorted(LOCATION_TO_SUFFIX)}")
+    return subject.astype(str) + "_" + suffix
 
 
 def load_game_labels(game_csv_path):
@@ -93,10 +105,11 @@ def load_game_labels(game_csv_path):
 
     df = pd.read_csv(
         game_csv_path, header=None, index_col=None,
-        usecols=[subject_col, label_col],
-        dtype={subject_col: str, label_col: str},
+        usecols=[LOCATION_COL, subject_col, label_col],
+        dtype={LOCATION_COL: str, subject_col: str, label_col: str},
     )
-    df = df.rename(columns={subject_col: "subject", label_col: "label"})
+    df[subject_col] = participant_keys(df[LOCATION_COL], df[subject_col])
+    df = df.drop(columns=[LOCATION_COL]).rename(columns={subject_col: "subject", label_col: "label"})
 
     df = df[df["label"] != VOID_RAW_LABEL].reset_index(drop=True)
 
@@ -142,13 +155,14 @@ def load_game_features(game_csv_path):
             "['location','skill','gender','subject','acc_x','acc_y','acc_z','basketball']."
         )
 
-    usecols = [subject_col] + feature_cols + [label_col]
+    usecols = [LOCATION_COL, subject_col] + feature_cols + [label_col]
     df = pd.read_csv(
         game_csv_path, header=None, index_col=None,
         usecols=usecols,
-        dtype={subject_col: str, label_col: str},
+        dtype={LOCATION_COL: str, subject_col: str, label_col: str},
     )
-    df = df.rename(columns={
+    df[subject_col] = participant_keys(df[LOCATION_COL], df[subject_col])
+    df = df.drop(columns=[LOCATION_COL]).rename(columns={
         subject_col: "subject", label_col: "label",
         feature_cols[0]: "acc_x", feature_cols[1]: "acc_y", feature_cols[2]: "acc_z",
     })

@@ -34,7 +34,7 @@ renames or moves any preds_*.npz file.
 Run from the repo root, after Phase 3 runs have populated logs/ with
 preds_*.npz files:
     python analysis/learning_curve_plot.py
-    python analysis/learning_curve_plot.py --folds b512,a0da,4d70,ce9d,9bd4 \
+    python analysis/learning_curve_plot.py --folds b512_na,a0da_eu,4d70_eu,ce9d_eu,9bd4_na \
         --fractions 0.25,0.5,0.75,1.0 --highlight_classes rebound,layup
     python analysis/learning_curve_plot.py \
         --dirs logs/subset_specific/loso_G/inceptioncontext/2026-07-17_12-00-00_lc_frac0.25_seed2:2 \
@@ -57,7 +57,7 @@ from sklearn.metrics import f1_score
 CLASS_NAMES = ['dribbling', 'shot', 'pass', 'rebound', 'layup',
                'walking', 'running', 'standing', 'sitting']
 
-DEFAULT_FOLDS = ['b512', 'a0da', '4d70', 'ce9d', '9bd4']
+DEFAULT_FOLDS = ['b512_na', 'a0da_eu', '4d70_eu', 'ce9d_eu', '9bd4_na']
 DEFAULT_FRACTIONS = [0.25, 0.5, 0.75, 1.0]
 DEFAULT_HIGHLIGHT = ['rebound', 'layup']
 
@@ -75,9 +75,9 @@ def parse_pred_filename(path):
     """
     Parse preds_<subject>_<fraction>.npz (legacy; every such file was written by
     a --seed 1 run, so seed is implied = 1) or preds_<subject>_<fraction>_seed<N>.npz
-    (current writer, validation.py). Subject ids are assumed to contain no
-    underscores (true for every known subject id: b512, a0da, 4d70, ce9d, 9bd4,
-    0846, c6f3), which is what makes parsing from the right unambiguous.
+    (current writer, validation.py). Parsing runs from the right: the fraction and
+    optional seed<N> are the last one or two tokens and everything before them is the
+    fold, so participant keys that contain an underscore (0846_eu) come through whole.
 
     Returns (fold, fraction, seed) or None if the filename matches neither form.
     """

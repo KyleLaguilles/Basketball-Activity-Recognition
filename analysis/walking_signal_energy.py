@@ -145,7 +145,7 @@ def main():
         wr = f"{row['w2s_rate_pct']:.2f}" if pd.notna(row["w2s_rate_pct"]) else "nan"
         print(f"{str(row['subject']):<{name_w}}  {row['n_pure_walking_windows']:>11}  {me:>12}  {wr:>13}")
 
-    # --- (2) Spearman correlation across the 14 subjects ---
+    # --- (2) Spearman correlation across the 24 subjects ---
     valid = energy_df.dropna(subset=["mean_signal_energy", "w2s_rate_pct"])
     print("\n" + "=" * 100)
     print("SPEARMAN CORRELATION: per-subject mean signal energy (pure walking) vs. walking->standing rate")
@@ -164,8 +164,8 @@ def main():
         else:
             print("Non-negative correlation: no support for low signal energy driving the "
                   "walking->standing error rate.")
-    if len(energy_df) != 14:
-        print(f"\nWARNING: expected 14 subjects, got {len(energy_df)}.")
+    if len(energy_df) != 24:
+        print(f"\nWARNING: expected 24 subjects, got {len(energy_df)}.")
 
     # --- (3) predicted-as-standing vs predicted-as-walking energy distributions, per subject ---
     def pred_comparison_table(pool_df, label):

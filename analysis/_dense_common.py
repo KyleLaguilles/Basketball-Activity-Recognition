@@ -49,12 +49,13 @@ fail = slf.fail
 SAMPLING_RATE = slf.SAMPLING_RATE
 
 EXPECTED_FOLD_COUNT = slf.EXPECTED_FOLD_COUNT      # 5, the LOSO baseline
-EXPECTED_FOLD_COUNT_ALL = 14                       # every subject in the seam map
+EXPECTED_FOLD_COUNT_ALL = 24                       # every subject in the seam map
 
 # validation.py:324-325 names these preds_<fold>_<fraction>[_seed<N>].npz; the fold
-# token is a 4-hex-character subject code. Augmentation runs carry a further _aug
-# suffix and are a different model, so they are excluded rather than swept in.
-NPZ_RE = re.compile(r"^preds_([0-9a-f]{4})_.*\.npz$")
+# token is a participant key <4-hex id>_<eu|na> (preprocess_data.participant_keys).
+# Augmentation runs carry a further _aug suffix and are a different model, so they are
+# excluded rather than swept in.
+NPZ_RE = re.compile(r"^preds_([0-9a-f]{4}_(?:eu|na))_.*\.npz$")
 
 
 def class_id(name):
@@ -75,7 +76,7 @@ def add_common_args(parser):
     parser.add_argument("--npz_pattern", default=None,
                         help="Glob containing '{fold}', to disambiguate multiple npz per fold.")
     parser.add_argument("--allow_partial_folds", action="store_true",
-                        help="Score a run that covers neither 5 nor 14 folds (a smoke test).")
+                        help="Score a run that covers neither 5 nor 24 folds (a smoke test).")
     return parser
 
 

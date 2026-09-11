@@ -38,9 +38,10 @@ SEAM DEFINITION. Within a raw file, a seam sits between consecutive surviving ga
 rows whose raw timestamps differ by more than one sample period. Sensor cadence is a
 clean 20 ms (verified: zero inter-sample gaps > 25 ms in the unfiltered raw stream
 across all 24 files), so GAP_THRESHOLD_MS = 25 admits 20 ms and rejects >= 40 ms.
-Recording boundaries are ALWAYS seams: that covers both the 10 subjects whose EU and
-US recordings are concatenated under one subject code with no marker, and the 13
-subject-to-subject junctions.
+Recording boundaries are ALWAYS seams. Each recording is its own participant --
+subject_code is keyed on the full filename stem <id>_<eu|na>, because the 4-hex id is
+only unique within a site (data/raw/meta.txt) -- so these are the 23
+participant-to-participant junctions.
 
 Read-only apart from data/seam_map.json. Imports nothing from src/ -- the filters are
 replayed independently, so the seam map does not depend on the training pipeline.
@@ -68,16 +69,14 @@ SAMPLE_PERIOD_MS = 1000 // SAMPLING_RATE_HZ      # 20
 GAP_THRESHOLD_MS = 25                             # > this == at least one deleted sample
 SCHEMA_VERSION = 1
 
+# data_creation.py:38 wrote the filename's 'na' site suffix into the location column as 'us'.
+LOCATION_TO_SUFFIX = {"eu": "eu", "us": "na"}
+
 # ---- anchors from docs/recon_dense_report.md §2.1 -------------------------------- #
 ANCHOR_TOTAL_SAMPLES = 1377145
 ANCHOR_TOTAL_SEGMENTS = 763
 ANCHOR_SHORT_1500 = 615
 
-ANCHOR_SUBJECT_SAMPLES = {
-    "05d8": 61755, "0846": 69569, "10f0": 111560, "2dd9": 94285, "4991": 67411,
-    "4d70": 126839, "9bd4": 121401, "a0da": 122130, "ac59": 118191, "b512": 117586,
-    "c6f3": 55213, "ce9d": 126777, "e90f": 58667, "f2ad": 125761,
-}
 ANCHOR_RECORDING_SAMPLES = {
     "05d8_eu": 61755, "0846_eu": 18684, "0846_na": 50885, "10f0_eu": 46161,
     "10f0_na": 65399, "2dd9_eu": 33465, "2dd9_na": 60820, "4991_eu": 67411,
@@ -86,6 +85,8 @@ ANCHOR_RECORDING_SAMPLES = {
     "b512_eu": 50572, "b512_na": 67014, "c6f3_na": 55213, "ce9d_eu": 62697,
     "ce9d_na": 64080, "e90f_eu": 58667, "f2ad_eu": 62122, "f2ad_na": 63639,
 }
+# One participant == one recording, so the 24 per-subject totals are the recording totals.
+ANCHOR_SUBJECT_SAMPLES = ANCHOR_RECORDING_SAMPLES
 ANCHOR_RECORDING_SEGMENTS = {
     "05d8_eu": 7, "0846_eu": 4, "0846_na": 98, "10f0_eu": 9, "10f0_na": 20,
     "2dd9_eu": 5, "2dd9_na": 42, "4991_eu": 3, "4d70_eu": 11, "4d70_na": 29,
@@ -112,6 +113,18 @@ def check(ok, label, detail=""):
 def fail_now(msg):
     print(f"\nFAIL: {msg}", file=sys.stderr)
     sys.exit(1)
+
+
+def participant_keys(frame):
+    """
+    <id>_<eu|na> per row of a header=None hangtime_*_data.csv frame -- the raw filename
+    stem, rebuilt from subject (col 3) and location (col 0). Replays
+    preprocess_data.participant_keys, since this script imports nothing from src/.
+    """
+    suffix = frame[0].map(LOCATION_TO_SUFFIX)
+    if suffix.isna().any():
+        fail_now(f"unrecognized location value(s): {sorted(map(str, set(frame.loc[suffix.isna(), 0])))}")
+    return frame[3].astype(str) + "_" + suffix
 
 
 # --------------------------------------------------------------------------------- #
@@ -172,7 +185,9 @@ def build_segments():
         fail_now(f"no raw CSVs found under {RAW_DIR}/")
 
     recordings = [os.path.splitext(os.path.basename(p))[0] for p in paths]
-    subject_names = sorted({r.split("_")[0] for r in recordings})
+    # One participant per recording: the subject is the full stem <id>_<eu|na>, because the
+    # 4-hex id is only unique within a site. sorted() order is LabelEncoder order.
+    subject_names = sorted(recordings)
     subject_code = {name: i for i, name in enumerate(subject_names)}
 
     segments = []
@@ -182,7 +197,7 @@ def build_segments():
     seg_idx_by_subject = {}
 
     for path, rec in zip(paths, recordings):
-        sbj = rec.split("_")[0]
+        sbj = rec
         df = surviving_game_rows(path)
         raw_frames[rec] = df
 
@@ -226,15 +241,18 @@ def verify(segments, per_recording_rows, raw_frames, subject_names, subject_code
           f"found {n_void}")
     check(len(game) == ANCHOR_TOTAL_SAMPLES, "game CSV row count == train row count",
           f"{len(game)} vs anchor {ANCHOR_TOTAL_SAMPLES}")
-    sg = set(game[3].astype(str).unique())
-    sd = set(pd.read_csv(DRILL_CSV, header=None, usecols=[3], dtype={3: str})[3].unique())
-    sw = set(pd.read_csv(WARMUP_CSV, header=None, usecols=[3], dtype={3: str})[3].unique())
+    game_key = participant_keys(game)
+    sg = set(game_key.unique())
+    sd = set(participant_keys(pd.read_csv(DRILL_CSV, header=None, usecols=[0, 3],
+                                          dtype={0: str, 3: str})).unique())
+    sw = set(participant_keys(pd.read_csv(WARMUP_CSV, header=None, usecols=[0, 3],
+                                          dtype={0: str, 3: str})).unique())
     union = sd | sw | sg
-    check(union == set(subject_names) and len(union) == 14,
-          "LabelEncoder alphabet (drill+warmup+game subjects) == subjects seen in raw filenames",
+    check(union == set(subject_names) and len(union) == 24,
+          "LabelEncoder alphabet (drill+warmup+game participant keys) == raw filename stems",
           f"{len(union)} subjects")
     order_ok = all(
-        game.iloc[segments[i]["start_row"], 3] == segments[i]["subject_name"]
+        game_key.iloc[segments[i]["start_row"]] == segments[i]["subject_name"]
         for i in range(0, len(segments), 37)
     )
     check(order_ok, "sampled segment start rows land on the right subject in the game CSV")
@@ -276,7 +294,7 @@ def verify(segments, per_recording_rows, raw_frames, subject_names, subject_code
     for s in segments:
         got[s["subject_name"]] = got.get(s["subject_name"], 0) + s["length"]
     bad = {k: (got.get(k), v) for k, v in ANCHOR_SUBJECT_SAMPLES.items() if got.get(k) != v}
-    check(not bad, "all 14 subject sample totals match", f"mismatches: {bad}" if bad else "")
+    check(not bad, "all 24 subject sample totals match", f"mismatches: {bad}" if bad else "")
 
     # (5) per-recording sample totals
     print("\n  (5) per-recording sample totals vs recon §2.1")
@@ -341,7 +359,7 @@ def verify(segments, per_recording_rows, raw_frames, subject_names, subject_code
             atol=1e-5,
         )
         lbl_ok = bool((blk[7].to_numpy() == raw["basketball"].to_numpy()).all())
-        sbj_ok = bool((blk[3].astype(str).to_numpy() == s["subject_name"]).all())
+        sbj_ok = bool((game_key.iloc[s["start_row"]:s["end_row"]].to_numpy() == s["subject_name"]).all())
         ts_ms_seg = pd.to_datetime(raw["timestamp"]).to_numpy().astype("datetime64[ms]").astype(np.int64)
         cont_ok = len(ts_ms_seg) < 2 or bool(np.all(np.diff(ts_ms_seg) <= GAP_THRESHOLD_MS))
         ok = acc_ok and lbl_ok and sbj_ok and cont_ok
