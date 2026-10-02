@@ -339,7 +339,7 @@ def cross_participant_cv(data, args, log_dir=None, run=None):
         if args.network == 'deepconvcontext':
             net = DeepConvContext(args.batch_size, args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob, args.bidirectional, args.context_type, args.nb_attention_heads, args.transformer_depth)
         elif args.network == 'deepconvlstm':
-            net = DeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob)
+            net = DeepConvLSTM(args.nb_channels, args.nb_classes, args.window_size, args.nb_filters, args.filter_width, args.nb_units_lstm, args.nb_layers_lstm, args.drop_prob, dense=args.dense)
         elif args.network == 'attendanddiscriminate':        
             net = AttendAndDiscriminate(args.nb_channels, args.nb_classes, args.nb_units_lstm, args.nb_filters, args.filter_width, args.nb_layers_lstm, False, args.drop_prob, 0.5, 0.5, 'ReLU', 1, args.gpu, args.weights_init)
         elif args.network == 'shallow_deepconvlstm':     

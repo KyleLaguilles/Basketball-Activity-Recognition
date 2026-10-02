@@ -344,8 +344,8 @@ if __name__ == '__main__':
                               'Bypasses apply_sliding_window entirely (its last-sample rule at '
                               'sliding_window.py:117 is the artifact this path removes) and reads '
                               'data/seam_map.json so no sequence spans a recording splice. '
-                              'Currently implemented for --network inceptioncontext and LOSO '
-                              'test cases only.')
+                              'Currently implemented for --network inceptioncontext / '
+                              'deepconvlstm and LOSO test cases only.')
     parser.add_argument('--dense_seq_len', default=500, type=int,
                          help='--dense sequence length in samples (500 = 10 s at 50 Hz).')
     parser.add_argument('--dense_overlap', default=0.5, type=float,
@@ -360,7 +360,8 @@ if __name__ == '__main__':
     parser.add_argument('--dense_seam_map', default='data/seam_map.json', type=str,
                          help='Path to the seam map built by scripts/build_seam_map.py.')
     parser.add_argument('--no_bilstm', default=False, action='store_true',
-                         help='--dense ablation: drop the dense head BiLSTM and classify each '
+                         help='--dense ablation for --network inceptioncontext: drop the dense '
+                              'head BiLSTM and classify each '
                               'timestep from the GRU output with a single Linear layer. Isolates '
                               'whether the rebound F1 gain came from dense labeling or from the '
                               "BiLSTM's temporal smoothing capacity; everything else (labels, "
@@ -404,14 +405,25 @@ if __name__ == '__main__':
     if args.augment_classes and args.augment_context_k < 0:
         parser.error(f"--augment_context_k must be >= 0 (got {args.augment_context_k!r}).")
 
-    # --dense compatibility: fail loudly rather than silently ignoring a flag. The dense
-    # head only exists on InceptionContext, and subsampling/augmentation both operate on
+    # Networks with a dense (per-timestep) forward path. Adding one here is not enough:
+    # the model must return (batch, classes, T) and its constructor must be handed
+    # dense=args.dense in validation.py's network-initialization block.
+    DENSE_NETWORKS = ('inceptioncontext', 'deepconvlstm')
+
+    # --dense compatibility: fail loudly rather than silently ignoring a flag. A dense head
+    # exists only on the networks listed above, and subsampling/augmentation both operate on
     # windows carrying the subject-id column (subsampling.py / augmentation.py read
     # X_train[:, :, 0]), which dense sequences do not have.
     if args.dense:
-        if args.network != 'inceptioncontext':
-            parser.error(f"--dense is implemented for --network inceptioncontext only "
-                         f"(got {args.network!r}).")
+        if args.network not in DENSE_NETWORKS:
+            parser.error(f"--dense is implemented for --network "
+                         f"{' / '.join(sorted(DENSE_NETWORKS))} only (got {args.network!r}).")
+        if args.no_bilstm and args.network != 'inceptioncontext':
+            parser.error(f"--no_bilstm is an ablation of the InceptionContext dense head "
+                         f"(it drops that head's BiLSTM) and has no meaning for "
+                         f"--network {args.network!r}, whose dense head reuses the windowed "
+                         "path's own unidirectional LSTM. Drop the flag rather than have it "
+                         "silently ignored.")
         if args.loss != 'cross_entropy':
             parser.error(f"--dense supports --loss cross_entropy only (got {args.loss!r}); "
                          "the maxup path reshapes logits as (batch, trials, -1), which assumes "
