@@ -1,0 +1,449 @@
+====================================================================================================================
+CALIBRATION FACTORS -- per-class duration correction, with leave-one-fold-out residuals
+====================================================================================================================
+
+  run            : 24fold_windowed_seed2   [logs/subset_specific/loso_G/inceptioncontext/2026-09-11_19-25-31_24fold_windowed_seed2]
+  windowing      : sw_length=1.0s sw_overlap=50% -> win_len=50 step=25 samples
+                   durations expanded last-window-wins onto the raw timeline
+  sampling rate  : 50 Hz (preprocess_data.py:31; never in cfg.txt)
+  pooling rule   : ratio of sums, sum(true) / sum(pred) over the held-in folds
+
+  fold        covered     duration  npz
+  05d8_eu       61750     0h20m35s  preds_05d8_eu_1.0_seed2.npz
+  0846_eu       18675     0h06m14s  preds_0846_eu_1.0_seed2.npz
+  0846_na       50875     0h16m58s  preds_0846_na_1.0_seed2.npz
+  10f0_eu       46150     0h15m23s  preds_10f0_eu_1.0_seed2.npz
+  10f0_na       65375     0h21m48s  preds_10f0_na_1.0_seed2.npz
+  2dd9_eu       33450     0h11m09s  preds_2dd9_eu_1.0_seed2.npz
+  2dd9_na       60800     0h20m16s  preds_2dd9_na_1.0_seed2.npz
+  4991_eu       67400     0h22m28s  preds_4991_eu_1.0_seed2.npz
+  4d70_eu       61525     0h20m30s  preds_4d70_eu_1.0_seed2.npz
+  4d70_na       65275     0h21m46s  preds_4d70_na_1.0_seed2.npz
+  9bd4_eu       62700     0h20m54s  preds_9bd4_eu_1.0_seed2.npz
+  9bd4_na       58675     0h19m34s  preds_9bd4_na_1.0_seed2.npz
+  a0da_eu       62550     0h20m51s  preds_a0da_eu_1.0_seed2.npz
+  a0da_na       59550     0h19m51s  preds_a0da_na_1.0_seed2.npz
+  ac59_eu       63100     0h21m02s  preds_ac59_eu_1.0_seed2.npz
+  ac59_na       55075     0h18m22s  preds_ac59_na_1.0_seed2.npz
+  b512_eu       50550     0h16m51s  preds_b512_eu_1.0_seed2.npz
+  b512_na       67000     0h22m20s  preds_b512_na_1.0_seed2.npz
+  c6f3_na       55200     0h18m24s  preds_c6f3_na_1.0_seed2.npz
+  ce9d_eu       62675     0h20m54s  preds_ce9d_eu_1.0_seed2.npz
+  ce9d_na       64075     0h21m22s  preds_ce9d_na_1.0_seed2.npz
+  e90f_eu       58650     0h19m33s  preds_e90f_eu_1.0_seed2.npz
+  f2ad_eu       62100     0h20m42s  preds_f2ad_eu_1.0_seed2.npz
+  f2ad_na       63625     0h21m12s  preds_f2ad_na_1.0_seed2.npz
+  TOTAL       1376800     7h38m56s   (24 folds)
+
+====================================================================================================================
+[1] UNCORRECTED BIAS -- pooled over all folds, the quantity being corrected
+====================================================================================================================
+
+  bias_pct = (pred - true) / true * 100. UNDER means the model reports less exposure
+  than occurred, which is the dangerous direction for an injury pipeline.
+
+  class           true_sec    pred_sec    bias_sec   bias_pct    dir  ball
+  ------------------------------------------------------------------------
+  dribbling  *      951.66      965.00      +13.34      +1.4%   OVER   yes
+  shot       *      151.36      182.00      +30.64     +20.2%   OVER   yes
+  pass       *      430.22      617.50     +187.28     +43.5%   OVER   yes
+  rebound    *      206.74      175.50      -31.24     -15.1%  UNDER   yes
+  layup      *      164.84      135.00      -29.84     -18.1%  UNDER   yes
+  walking         14482.38    11706.50    -2775.88     -19.2%  UNDER      
+  running          7035.96     6764.50     -271.46      -3.9%  UNDER      
+  standing         1151.90     3173.50    +2021.60    +175.5%   OVER      
+  sitting          2960.94     3816.50     +855.56     +28.9%   OVER      
+  ------------------------------------------------------------------------
+  TOTAL           27536.00    27536.00       +0.00
+
+  The total is exact by construction: on the covered mask every sample carries one
+  truth and one prediction, so the two columns sum to the same duration.
+
+====================================================================================================================
+[2] CORRECTION FACTORS -- multiply predicted seconds by k to get corrected seconds
+====================================================================================================================
+
+  k = sum(true) / sum(pred), pooled over all folds. k > 1 scales an under-predicted
+  class up; k < 1 scales an over-predicted class down. The LOO columns show how much
+  k moves when one fold is withheld -- a wide [min, max] means the factor is set by
+  whichever subjects happen to be in the training set, and will not transfer.
+
+  class            k_all   loo_min   loo_max   loo_std  spread/k   stability
+  --------------------------------------------------------------------------
+  dribbling  *    0.9862    0.9084    1.0126    0.0183    0.1057      STABLE
+  shot       *    0.8316    0.7644    1.2786    0.0964    0.6183    UNSTABLE
+  pass       *    0.6967    0.6693    0.7187    0.0108    0.0708      STABLE
+  rebound    *    1.1780    1.0866    1.5452    0.0805    0.3893       loose
+  layup      *    1.2210    1.1485    1.7368    0.1103    0.4818       loose
+  walking         1.2371    1.2166    1.2581    0.0107    0.0335      STABLE
+  running         1.0401    1.0261    1.0559    0.0076    0.0286      STABLE
+  standing        0.3630    0.3167    0.3881    0.0146    0.1966      STABLE
+  sitting         0.7758    0.7418    0.8179    0.0194    0.0981      STABLE
+  --------------------------------------------------------------------------
+
+  spread/k = (loo_max - loo_min) / k_all, the LOO range as a fraction of the factor
+  itself: STABLE < 0.25, loose < 0.50, UNSTABLE >= 0.50.
+
+  UNSTABLE FACTORS -- do not ship these as constants:
+    shot         k=0.8316 but LOO range [0.7644, 1.2786]
+
+====================================================================================================================
+[3] CONSERVATION DRIFT -- correction breaks the timeline partition
+====================================================================================================================
+
+  Raw predictions partition the covered timeline: every sample carries exactly one
+  class, so they sum to the recording length. Scaling each class by a different k
+  destroys that. The drift is measured with the LEAVE-ONE-OUT factors, applied to the
+  held-out fold -- the all-fold factor is excluded because it reproduces each class's
+  true duration by construction (k_c * pred_c == true_c), so its drift is exactly zero
+  and would say nothing about a new subject.
+
+  fold          true_s   raw_pred_s  corrected_s    drift_s  drift_pct
+  --------------------------------------------------------------------
+  05d8_eu      1235.00      1235.00      1169.76     -65.24      -5.3%
+  0846_eu       373.50       373.50       371.88      -1.62      -0.4%
+  0846_na      1017.50      1017.50      1133.13    +115.63     +11.4%
+  10f0_eu       923.00       923.00       883.57     -39.43      -4.3%
+  10f0_na      1307.50      1307.50      1244.78     -62.72      -4.8%
+  2dd9_eu       669.00       669.00       648.56     -20.44      -3.1%
+  2dd9_na      1216.00      1216.00      1126.79     -89.21      -7.3%
+  4991_eu      1348.00      1348.00      1312.15     -35.85      -2.7%
+  4d70_eu      1230.50      1230.50      1222.49      -8.01      -0.7%
+  4d70_na      1305.50      1305.50      1383.51     +78.01      +6.0%
+  9bd4_eu      1254.00      1254.00      1146.84    -107.16      -8.5%
+  9bd4_na      1173.50      1173.50      1222.34     +48.84      +4.2%
+  a0da_eu      1251.00      1251.00      1306.02     +55.02      +4.4%
+  a0da_na      1191.00      1191.00      1276.13     +85.13      +7.1%
+  ac59_eu      1262.00      1262.00      1311.00     +49.00      +3.9%
+  ac59_na      1101.50      1101.50      1004.95     -96.55      -8.8%
+  b512_eu      1011.00      1011.00       920.08     -90.92      -9.0%
+  b512_na      1340.00      1340.00      1498.41    +158.41     +11.8%
+  c6f3_na      1104.00      1104.00      1129.45     +25.45      +2.3%
+  ce9d_eu      1253.50      1253.50      1177.22     -76.28      -6.1%
+  ce9d_na      1281.50      1281.50      1282.62      +1.12      +0.1%
+  e90f_eu      1173.00      1173.00      1157.48     -15.52      -1.3%
+  f2ad_eu      1242.00      1242.00      1247.07      +5.07      +0.4%
+  f2ad_na      1272.50      1272.50      1436.19    +163.69     +12.9%
+  --------------------------------------------------------------------
+  mean                                                          +0.09%
+  max |.|                                                       12.86%
+
+  Out of sample the corrected durations miss the recording length by 5.28% on
+  average. A consumer needing a partition of the timeline must renormalize by that,
+  which spreads the residual back across every class in proportion. A consumer
+  needing nine independent exposure terms need not, and should not.
+
+====================================================================================================================
+[4] LEAVE-ONE-FOLD-OUT RESIDUALS -- factor fitted on the other folds, applied here
+====================================================================================================================
+
+  For each fold: k is estimated from the OTHER folds only, then applied to this
+  fold's predictions. 'before' is the uncorrected relative error, 'after' the
+  residual. This is what a new subject should expect, not the in-sample fit.
+
+  dribbling*
+    fold        true_s    pred_s    k_loo    corr_s    before%     after%   better
+    ------------------------------------------------------------------------------
+    05d8_eu      89.48     82.50   0.9770     80.60       -7.8       -9.9       no
+    0846_eu       1.94      6.00   0.9903      5.94     +209.3     +206.3      yes
+    0846_na      11.12      2.00   0.9767      1.95      -82.0      -82.4       no
+    10f0_eu      10.04     14.00   0.9901     13.86      +39.4      +38.1      yes
+    10f0_na      12.72     20.00   0.9936     19.87      +57.2      +56.2      yes
+    2dd9_eu       0.94      1.50   0.9867      1.48      +59.6      +57.5      yes
+    2dd9_na      20.16     11.00   0.9764     10.74      -45.4      -46.7       no
+    4991_eu      22.92     23.00   0.9859     22.68       +0.3       -1.1       no
+    4d70_eu      42.32     42.50   0.9857     41.89       +0.4       -1.0       no
+    4d70_na      95.50    119.50   1.0126    121.01      +25.1      +26.7       no
+    9bd4_eu       4.92      4.00   0.9852      3.94      -18.7      -19.9       no
+    9bd4_na      47.82     45.00   0.9824     44.21       -5.9       -7.6       no
+    a0da_eu      10.24     11.50   0.9873     11.35      +12.3      +10.9      yes
+    a0da_na      24.38     30.50   0.9923     30.26      +25.1      +24.1      yes
+    ac59_eu      26.72     43.50   1.0037     43.66      +62.8      +63.4       no
+    ac59_na      54.48     58.00   0.9892     57.37       +6.5       +5.3      yes
+    b512_eu      21.02     26.00   0.9911     25.77      +23.7      +22.6      yes
+    b512_na     157.78    167.00   0.9948    166.14       +5.8       +5.3      yes
+    c6f3_na      71.02     72.50   0.9867     71.54       +2.1       +0.7      yes
+    ce9d_eu      42.18     52.00   0.9961     51.80      +23.3      +22.8      yes
+    ce9d_na      44.70     55.00   0.9967     54.82      +23.0      +22.6      yes
+    e90f_eu       8.62      6.50   0.9839      6.40      -24.6      -25.8       no
+    f2ad_eu      96.88     24.00   0.9084     21.80      -75.2      -77.5       no
+    f2ad_na      33.76     47.50   1.0004     47.52      +40.7      +40.8       no
+    MAE                                                   36.5       36.5    12/24
+
+  shot*
+    fold        true_s    pred_s    k_loo    corr_s    before%     after%   better
+    ------------------------------------------------------------------------------
+    05d8_eu      15.26      4.50   0.7668      3.45      -70.5      -77.4       no
+    0846_eu       0.00      0.00   0.8316      0.00        n/a        n/a      n/a
+    0846_na       5.72      0.00   0.8002      0.00     -100.0     -100.0      tie
+    10f0_eu       3.36      5.00   0.8362      4.18      +48.8      +24.4      yes
+    10f0_na       6.48      0.50   0.7982      0.40      -92.3      -93.8       no
+    2dd9_eu       5.60      5.50   0.8258      4.54       -1.8      -18.9       no
+    2dd9_na       9.68      2.50   0.7893      1.97      -74.2      -79.6       no
+    4991_eu       3.80      1.50   0.8175      1.23      -60.5      -67.7       no
+    4d70_eu       1.76      5.50   0.8476      4.66     +212.5     +164.9      yes
+    4d70_na       2.02      4.50   0.8414      3.79     +122.8      +87.4      yes
+    9bd4_eu       7.50      3.00   0.8037      2.41      -60.0      -67.9       no
+    9bd4_na       3.46     13.00   0.8751     11.38     +275.7     +228.8      yes
+    a0da_eu       0.00      1.50   0.8386      1.26        n/a        n/a      n/a
+    a0da_na       2.90      5.50   0.8411      4.63      +89.7      +59.5      yes
+    ac59_eu      19.12      9.00   0.7644      6.88      -52.9      -64.0       no
+    ac59_na       7.60      9.00   0.8310      7.48      +18.4       -1.6      yes
+    b512_eu       0.00      0.00   0.8316      0.00        n/a        n/a      n/a
+    b512_na       6.16      1.50   0.8044      1.21      -75.6      -80.4       no
+    c6f3_na       8.46      2.50   0.7961      1.99      -70.4      -76.5       no
+    ce9d_eu      16.40      7.50   0.7734      5.80      -54.3      -64.6       no
+    ce9d_na      11.38     22.00   0.8749     19.25      +93.3      +69.1      yes
+    e90f_eu       0.00      4.00   0.8503      3.40        n/a        n/a      n/a
+    f2ad_eu       5.60     68.00   1.2786     86.94    +1114.3    +1452.6       no
+    f2ad_na       9.10      6.00   0.8083      4.85      -34.1      -46.7       no
+    MAE                                                  136.1      146.3     7/20
+
+  pass*
+    fold        true_s    pred_s    k_loo    corr_s    before%     after%   better
+    ------------------------------------------------------------------------------
+    05d8_eu      28.12     58.00   0.7187     41.68     +106.3      +48.2      yes
+    0846_eu       7.06      8.50   0.6948      5.91      +20.4      -16.3      yes
+    0846_na       1.52      6.50   0.7016      4.56     +327.6     +200.0      yes
+    10f0_eu       7.20     12.00   0.6986      8.38      +66.7      +16.4      yes
+    10f0_na       0.00      8.50   0.7064      6.00        n/a        n/a      n/a
+    2dd9_eu      15.74     23.00   0.6972     16.04      +46.1       +1.9      yes
+    2dd9_na       3.34     11.00   0.7038      7.74     +229.3     +131.8      yes
+    4991_eu      16.88     24.00   0.6964     16.71      +42.2       -1.0      yes
+    4d70_eu      34.62     47.50   0.6940     32.97      +37.2       -4.8      yes
+    4d70_na      33.64     43.00   0.6903     29.68      +27.8      -11.8      yes
+    9bd4_eu      15.40     22.50   0.6972     15.69      +46.1       +1.9      yes
+    9bd4_na      19.10     12.50   0.6795      8.49      -34.6      -55.5       no
+    a0da_eu      13.16     24.00   0.7027     16.87      +82.4      +28.2      yes
+    a0da_na       7.90      9.50   0.6946      6.60      +20.3      -16.5      yes
+    ac59_eu      24.18     34.50   0.6965     24.03      +42.7       -0.6      yes
+    ac59_na      28.00     40.00   0.6965     27.86      +42.9       -0.5      yes
+    b512_eu      15.18     15.50   0.6894     10.69       +2.1      -29.6       no
+    b512_na      16.02     26.50   0.7008     18.57      +65.4      +15.9      yes
+    c6f3_na      18.20     37.50   0.7104     26.64     +106.0      +46.4      yes
+    ce9d_eu      23.20     44.50   0.7103     31.61      +91.8      +36.2      yes
+    ce9d_na      15.94     29.50   0.7046     20.78      +85.1      +30.4      yes
+    e90f_eu      10.30     12.00   0.6935      8.32      +16.5      -19.2       no
+    f2ad_eu      36.66     29.50   0.6693     19.74      -19.5      -46.1       no
+    f2ad_na      38.86     37.50   0.6748     25.30       -3.5      -34.9       no
+    MAE                                                   67.9       34.5    18/23
+
+  rebound*
+    fold        true_s    pred_s    k_loo    corr_s    before%     after%   better
+    ------------------------------------------------------------------------------
+    05d8_eu       7.88      9.50   1.1980     11.38      +20.6      +44.4       no
+    0846_eu       3.12      2.00   1.1736      2.35      -35.9      -24.8      yes
+    0846_na       0.00      4.50   1.2090      5.44        n/a        n/a      n/a
+    10f0_eu       3.32      0.00   1.1591      0.00     -100.0     -100.0      tie
+    10f0_na       3.54      2.00   1.1712      2.34      -43.5      -33.8      yes
+    2dd9_eu       7.36      3.00   1.1558      3.47      -59.2      -52.9      yes
+    2dd9_na       4.76      1.50   1.1608      1.74      -68.5      -63.4      yes
+    4991_eu       7.90      5.50   1.1696      6.43      -30.4      -18.6      yes
+    4d70_eu       9.74      4.50   1.1520      5.18      -53.8      -46.8      yes
+    4d70_na      24.66     25.00   1.2098     30.25       +1.4      +22.7       no
+    9bd4_eu      16.58      0.50   1.0866      0.54      -97.0      -96.7      yes
+    9bd4_na       4.04      5.00   1.1889      5.94      +23.8      +47.1       no
+    a0da_eu      16.42      6.00   1.1228      6.74      -63.5      -59.0      yes
+    a0da_na       2.92      2.50   1.1782      2.95      -14.4       +0.9      yes
+    ac59_eu      21.12     14.00   1.1493     16.09      -33.7      -23.8      yes
+    ac59_na       6.38      4.00   1.1683      4.67      -37.3      -26.8      yes
+    b512_eu       7.36      2.50   1.1525      2.88      -66.0      -60.9      yes
+    b512_na       0.74      1.00   1.1805      1.18      +35.1      +59.5       no
+    c6f3_na       4.08      1.50   1.1647      1.75      -63.2      -57.2      yes
+    ce9d_eu       8.68      9.50   1.1931     11.33       +9.4      +30.6       no
+    ce9d_na      16.48      6.00   1.1225      6.73      -63.6      -59.1      yes
+    e90f_eu       7.94      5.50   1.1694      6.43      -30.7      -19.0      yes
+    f2ad_eu      12.82     50.00   1.5452     77.26     +290.0     +502.6       no
+    f2ad_na       8.90     10.00   1.1954     11.95      +12.4      +34.3       no
+    MAE                                                   54.5       64.6    15/23
+
+  layup*
+    fold        true_s    pred_s    k_loo    corr_s    before%     after%   better
+    ------------------------------------------------------------------------------
+    05d8_eu      12.06      6.50   1.1889      7.73      -46.1      -35.9      yes
+    0846_eu       0.00      0.50   1.2256      0.61        n/a        n/a      n/a
+    0846_na       0.00      0.00   1.2210      0.00        n/a        n/a      n/a
+    10f0_eu       5.60      2.50   1.2018      3.00      -55.4      -46.3      yes
+    10f0_na       0.00      1.50   1.2348      1.85        n/a        n/a      n/a
+    2dd9_eu      10.06      2.00   1.1638      2.33      -80.1      -76.9      yes
+    2dd9_na       0.00      0.00   1.2210      0.00        n/a        n/a      n/a
+    4991_eu       6.82      2.00   1.1881      2.38      -70.7      -65.2      yes
+    4d70_eu       3.88      2.50   1.2148      3.04      -35.6      -21.7      yes
+    4d70_na      12.30      8.50   1.2058     10.25      -30.9      -16.7      yes
+    9bd4_eu      14.96      4.50   1.1485      5.17      -69.9      -65.5      yes
+    9bd4_na       5.74      9.50   1.2677     12.04      +65.5     +109.8       no
+    a0da_eu       1.40      0.00   1.2107      0.00     -100.0     -100.0      tie
+    a0da_na       8.58      2.50   1.1793      2.95      -70.9      -65.6      yes
+    ac59_eu       8.78      6.50   1.2145      7.89      -26.0      -10.1      yes
+    ac59_na       6.70      5.00   1.2165      6.08      -25.4       -9.2      yes
+    b512_eu       4.96      3.00   1.2112      3.63      -39.5      -26.7      yes
+    b512_na      14.96     11.00   1.2087     13.30      -26.5      -11.1      yes
+    c6f3_na       0.00      0.50   1.2256      0.61        n/a        n/a      n/a
+    ce9d_eu       8.90      6.00   1.2088      7.25      -32.6      -18.5      yes
+    ce9d_na      12.84      4.00   1.1603      4.64      -68.8      -63.9      yes
+    e90f_eu      14.92      4.50   1.1488      5.17      -69.8      -65.4      yes
+    f2ad_eu       9.40     45.50   1.7368     79.02     +384.0     +740.7       no
+    f2ad_na       1.98      6.50   1.2674      8.24     +228.3     +316.1       no
+    MAE                                                   80.3       98.2    15/19
+
+  walking 
+    fold        true_s    pred_s    k_loo    corr_s    before%     after%   better
+    ------------------------------------------------------------------------------
+    05d8_eu     797.48    482.00   1.2192    587.65      -39.6      -26.3      yes
+    0846_eu     165.22    141.00   1.2379    174.55      -14.7       +5.6      yes
+    0846_na     696.44    654.00   1.2473    815.74       -6.1      +17.1       no
+    10f0_eu     591.76    408.00   1.2294    501.60      -31.1      -15.2      yes
+    10f0_na     419.08    429.00   1.2470    534.97       +2.4      +27.7       no
+    2dd9_eu     388.72    245.50   1.2297    301.89      -36.8      -22.3      yes
+    2dd9_na     364.06    404.00   1.2491    504.65      +11.0      +38.6       no
+    4991_eu     697.80    589.00   1.2399    730.30      -15.6       +4.7      yes
+    4d70_eu     551.70    503.50   1.2435    626.09       -8.7      +13.5       no
+    4d70_na     711.04    667.50   1.2475    832.72       -6.1      +17.1       no
+    9bd4_eu     419.38    277.50   1.2305    341.45      -33.8      -18.6      yes
+    9bd4_na     490.28    418.50   1.2396    518.75      -14.6       +5.8      yes
+    a0da_eu     585.40    510.50   1.2412    633.66      -12.8       +8.2      yes
+    a0da_na     612.16    579.00   1.2465    721.71       -5.4      +17.9       no
+    ac59_eu     756.88    662.50   1.2428    823.36      -12.5       +8.8      yes
+    ac59_na     659.02    369.50   1.2193    450.54      -43.9      -31.6      yes
+    b512_eu     672.98    450.50   1.2268    552.69      -33.1      -17.9      yes
+    b512_na     949.28    881.50   1.2502   1102.03       -7.1      +16.1       no
+    c6f3_na     679.74    525.50   1.2345    648.72      -22.7       -4.6      yes
+    ce9d_eu     684.56    432.00   1.2238    528.68      -36.9      -22.8      yes
+    ce9d_na     617.78    477.00   1.2347    588.93      -22.8       -4.7      yes
+    e90f_eu     561.72    461.50   1.2379    571.31      -17.8       +1.7      yes
+    f2ad_eu     701.40    379.50   1.2166    461.72      -45.9      -34.2      yes
+    f2ad_na     708.50    758.00   1.2581    953.61       +7.0      +34.6       no
+    MAE                                                   20.3       17.3    16/24
+
+  running 
+    fold        true_s    pred_s    k_loo    corr_s    before%     after%   better
+    ------------------------------------------------------------------------------
+    05d8_eu     216.04    283.00   1.0522    297.78      +31.0      +37.8       no
+    0846_eu     174.94    154.50   1.0380    160.37      -11.7       -8.3      yes
+    0846_na     232.80    134.50   1.0261    138.01      -42.2      -40.7      yes
+    10f0_eu     221.56    201.50   1.0383    209.22       -9.1       -5.6      yes
+    10f0_na     301.96    234.50   1.0312    241.83      -22.3      -19.9      yes
+    2dd9_eu     228.40    258.00   1.0463    269.94      +13.0      +18.2       no
+    2dd9_na     206.02    151.00   1.0327    155.94      -26.7      -24.3      yes
+    4991_eu     163.56    159.50   1.0405    165.96       -2.5       +1.5      yes
+    4d70_eu     340.40    288.00   1.0338    297.74      -15.4      -12.5      yes
+    4d70_na     371.18    295.50   1.0303    304.44      -20.4      -18.0      yes
+    9bd4_eu     320.36    399.00   1.0550    420.94      +24.5      +31.4       no
+    9bd4_na     543.06    485.50   1.0341    502.04      -10.6       -7.6      yes
+    a0da_eu     287.40    373.00   1.0559    393.84      +29.8      +37.0       no
+    a0da_na     364.66    367.00   1.0428    382.71       +0.6       +4.9       no
+    ac59_eu     338.08    312.00   1.0380    323.86       -7.7       -4.2      yes
+    ac59_na     282.22    284.50   1.0422    296.52       +0.8       +5.1       no
+    b512_eu      88.84    100.00   1.0424    104.24      +12.6      +17.3       no
+    b512_na     163.86    152.50   1.0393    158.50       -6.9       -3.3      yes
+    c6f3_na     298.00    297.00   1.0418    309.42       -0.3       +3.8       no
+    ce9d_eu     419.76    409.00   1.0410    425.78       -2.6       +1.4      yes
+    ce9d_na     487.58    492.50   1.0441    514.20       +1.0       +5.5       no
+    e90f_eu     245.14    284.50   1.0480    298.15      +16.1      +21.6       no
+    f2ad_eu     300.24    292.00   1.0407    303.87       -2.7       +1.2      yes
+    f2ad_na     439.90    356.00   1.0293    366.42      -19.1      -16.7      yes
+    MAE                                                   13.7       14.5    14/24
+
+  standing 
+    fold        true_s    pred_s    k_loo    corr_s    before%     after%   better
+    ------------------------------------------------------------------------------
+    05d8_eu      66.36    249.50   0.3713     92.63     +276.0      +39.6      yes
+    0846_eu      21.22     61.00   0.3633     22.16     +187.5       +4.4      yes
+    0846_na      69.90     19.50   0.3431      6.69      -72.1      -90.4       no
+    10f0_eu       9.88    188.00   0.3825     71.91    +1802.8     +627.9      yes
+    10f0_na      22.48     46.00   0.3611     16.61     +104.6      -26.1      yes
+    2dd9_eu      12.18    130.50   0.3745     48.88     +971.4     +301.3      yes
+    2dd9_na      86.70     77.50   0.3441     26.66      -10.6      -69.2       no
+    4991_eu      51.00    118.50   0.3604     42.70     +132.4      -16.3      yes
+    4d70_eu      50.80    117.00   0.3602     42.15     +130.3      -17.0      yes
+    4d70_na      55.16    142.00   0.3618     51.37     +157.4       -6.9      yes
+    9bd4_eu      14.98    125.00   0.3729     46.62     +734.4     +211.2      yes
+    9bd4_na      60.00     63.00   0.3510     22.12       +5.0      -63.1       no
+    a0da_eu      18.88      7.00   0.3578      2.50      -62.9      -86.7       no
+    a0da_na     167.50     65.50   0.3167     20.75      -60.9      -87.6       no
+    ac59_eu      67.12    180.00   0.3624     65.23     +168.2       -2.8      yes
+    ac59_na      57.10    259.50   0.3757     97.50     +354.5      +70.7      yes
+    b512_eu      18.46    253.00   0.3881     98.19    +1270.5     +431.9      yes
+    b512_na      31.20     95.50   0.3641     34.77     +206.1      +11.4      yes
+    c6f3_na      24.50    151.00   0.3730     56.32     +516.3     +129.9      yes
+    ce9d_eu      49.82    285.00   0.3815    108.74     +472.1     +118.3      yes
+    ce9d_na      74.80    189.00   0.3609     68.21     +152.7       -8.8      yes
+    e90f_eu      11.36    100.50   0.3711     37.30     +784.7     +228.3      yes
+    f2ad_eu      79.00    199.00   0.3607     71.78     +151.9       -9.1      yes
+    f2ad_na      31.50     51.00   0.3588     18.30      +61.9      -41.9      yes
+    MAE                                                  368.6      112.5    19/24
+
+  sitting 
+    fold        true_s    pred_s    k_loo    corr_s    before%     after%   better
+    ------------------------------------------------------------------------------
+    05d8_eu       2.32     59.50   0.7875     46.86    +2464.7    +1919.7      yes
+    0846_eu       0.00      0.00   0.7758      0.00        n/a        n/a      n/a
+    0846_na       0.00    196.50   0.8179    160.73        n/a        n/a      n/a
+    10f0_eu      70.28     92.00   0.7761     71.40      +30.9       +1.6      yes
+    10f0_na     541.24    565.50   0.7443    420.90       +4.5      -22.2       no
+    2dd9_eu       0.00      0.00   0.7758      0.00        n/a        n/a      n/a
+    2dd9_na     521.28    557.50   0.7486    417.34       +6.9      -19.9       no
+    4991_eu     377.32    425.00   0.7618    323.76      +12.6      -14.2       no
+    4d70_eu     195.28    219.50   0.7689    168.77      +12.4      -13.6       no
+    4d70_na       0.00      0.00   0.7758      0.00        n/a        n/a      n/a
+    9bd4_eu     439.92    418.00   0.7418    310.07       -5.0      -29.5       no
+    9bd4_na       0.00    121.50   0.8013     97.36        n/a        n/a      n/a
+    a0da_eu     318.10    317.50   0.7553    239.81       -0.2      -24.6       no
+    a0da_na       0.00    129.00   0.8030    103.58        n/a        n/a      n/a
+    ac59_eu       0.00      0.00   0.7758      0.00        n/a        n/a      n/a
+    ac59_na       0.00     72.00   0.7907     56.93        n/a        n/a      n/a
+    b512_eu     182.20    160.50   0.7600    121.99      -11.9      -33.0       no
+    b512_na       0.00      3.50   0.7765      2.72        n/a        n/a      n/a
+    c6f3_na       0.00     16.00   0.7791     12.47        n/a        n/a      n/a
+    ce9d_eu       0.00      8.00   0.7775      6.22        n/a        n/a      n/a
+    ce9d_na       0.00      6.50   0.7771      5.05        n/a        n/a      n/a
+    e90f_eu     313.00    294.00   0.7517    221.01       -6.1      -29.4       no
+    f2ad_eu       0.00    154.50   0.8086    124.92        n/a        n/a      n/a
+    f2ad_na       0.00      0.00   0.7758      0.00        n/a        n/a      n/a
+    MAE                                                  255.5      210.8     2/10
+
+====================================================================================================================
+[5] DOES THE CORRECTION HELP? -- pooled gain vs typical-fold gain, both out of sample
+====================================================================================================================
+
+  'pooled' compares the summed durations, 'MAE' the mean |relative error| across
+  folds -- both computed with the LEAVE-ONE-OUT factors, so neither is an in-sample
+  fit. (The all-fold factor's pooled residual is identically zero by construction and
+  is not shown.) A class that improves pooled but not MAE has had its BIAS removed and
+  its SPREAD left intact: the pipeline's total gets better, any single subject does not.
+
+  class         pooled_before%   pooled_loo%  MAE_before%   MAE_loo%  folds_helped   verdict
+  ------------------------------------------------------------------------------------------
+  dribbling  *           +1.4%         +0.5%         36.5       36.5         12/24     mixed
+  shot       *          +20.2%        +20.0%        136.1      146.3          7/20   NO HELP
+  pass       *          +43.5%         +0.2%         67.9       34.5         18/23     HELPS
+  rebound    *          -15.1%         +8.9%         54.5       64.6         15/23     mixed
+  layup      *          -18.1%        +13.6%         80.3       98.2         15/19     mixed
+  walking               -19.2%         +0.2%         20.3       17.3         16/24     HELPS
+  running                -3.9%         +0.1%         13.7       14.5         14/24     mixed
+  standing             +175.5%         +1.6%        368.6      112.5         19/24     HELPS
+  sitting               +28.9%         -1.7%        255.5      210.8          2/10     mixed
+  ------------------------------------------------------------------------------------------
+
+  MIXED -- the fold count and the mean disagree, so one or two folds carry the mean:
+    dribbling    MAE 36.5% -> 36.5%, helped 12/24 folds -- the mean improved but most folds did not
+    rebound      MAE 54.5% -> 64.6%, helped 15/23 folds -- most folds improved but the mean worsened
+    layup        MAE 80.3% -> 98.2%, helped 15/19 folds -- most folds improved but the mean worsened
+    running      MAE 13.7% -> 14.5%, helped 14/24 folds -- most folds improved but the mean worsened
+    sitting      MAE 255.5% -> 210.8%, helped 2/10 folds -- the mean improved but most folds did not
+
+  NO HELP -- correction makes the typical fold worse:
+    shot         MAE 136.1% -> 146.3%, helped 7/20 folds
+
+  For these the bias is not one-directional across subjects, so no scalar repairs
+  it. Applying the factor anyway trades a known pooled bias for a per-subject one.
+
+  SHIP-READY (helps the typical fold, factor stable in [2]): pass, walking, standing
+  Explosive ball actions (shot, rebound, layup): correction helps 0 of 3.
+
+  Wrote /tmp/claude-1000/-home-jovyan-hangtime-har/c496e422-0019-4311-9e58-d191e4b368b7/scratchpad/calib_win_seed2.csv  (9 classes, factor_k is the column to apply).
+
+====================================================================================================================
+Ship [2] as the correction table; quote [4]/[5] as what it is worth out of sample.
+A class marked UNSTABLE in [2] or NO HELP in [5] should not be corrected by a scalar.
+====================================================================================================================

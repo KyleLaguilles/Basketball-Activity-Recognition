@@ -53,7 +53,7 @@ pipeline's ints, and an encoding mismatch cannot survive an exact label-sequence
 match over thousands of windows.
 
 Read-only and CPU-only. Imports nothing from src/, loads no checkpoints, writes no
-files.
+files unless --csv is given.
 
 Usage (from repo root, hangtime_har_py310 env):
     python analysis/sample_level_f1.py \
@@ -328,7 +328,12 @@ def process_dir(results_dir, labels_df, candidate_cache, npz_pattern):
         candidate_cache[key] = build_candidates(labels_df, win_len, step)
     candidates = candidate_cache[key]
 
-    folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
+    # No fallback to wp.EXPECTED_FOLDS: an all-subject run records `loso_subjects: []`,
+    # and substituting the 5 baseline folds would silently score a different fold set.
+    folds = cfg.get("loso_subjects")
+    if not folds:
+        fail(f"{results_dir}/cfg.txt has loso_subjects={folds!r}. The windowed path needs the "
+             "fold list recorded explicitly; refusing to assume the 5 baseline folds.")
     if len(folds) not in (EXPECTED_FOLD_COUNT, ALL_SUBJECT_FOLD_COUNT):
         fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
              f"{EXPECTED_FOLD_COUNT} (the LOSO baseline) or {ALL_SUBJECT_FOLD_COUNT} "
@@ -449,7 +454,10 @@ def resolve_dense_folds(results_dir, cfg):
     they must agree with the files exactly, in both directions, so a mismatch is a
     hard fail rather than a silent intersection.
     """
-    cfg_folds = list(cfg.get("loso_subjects") or [])
+    if "loso_subjects" not in cfg:
+        fail(f"{results_dir}/cfg.txt has no 'loso_subjects' key. An empty list means an "
+             "all-subject run; a missing key means nothing, so refusing to guess.")
+    cfg_folds = list(cfg["loso_subjects"] or [])
 
     by_fold = {}
     for path in sorted(glob.glob(os.path.join(results_dir, "preds_*.npz"))):
@@ -616,7 +624,11 @@ def metric_table(records, header, note, values_of, macro_of, signed=False):
     print("  " + "-" * (len(line) - 2))
     for r in records:
         vals = values_of(r)
-        print(f"  {r['name']:<{name_w}} {r['sw_length']:>7.1f} {r['n_windows']:>10} "
+        # A dense run has no window length and no windows; its stored sw_length is the
+        # training sequence length, which must not read as a point on the sweep.
+        sw_len = "dense" if r.get("dense") else f"{r['sw_length']:.1f}"
+        n_win = "-" if r.get("dense") else r["n_windows"]
+        print(f"  {r['name']:<{name_w}} {sw_len:>7} {n_win:>10} "
               f"{r['n_covered']:>10} {r['coverage']:>9.5f}  "
               + "".join(f"{v:>{sign}{CW}.4f}" for v in vals)
               + f"{macro_of(r):>{sign}{CW + 2}.4f}")
@@ -654,13 +666,20 @@ def report_per_dir(records):
 
 
 def report_tables(records):
+    # main() has already required every record to resolve to the same subject set,
+    # so the fold count is shared.
+    n_folds = len(records[0]["folds"])
+    if all(r.get("dense") for r in records):
+        how = "  Per-sample predictions from a dense run (one per raw sample, no expansion),"
+    else:
+        how = "  Window predictions expanded onto the raw 50 Hz timeline (last-window-wins),"
     print("=" * 100)
     print("[2] SAMPLE-LEVEL PER-CLASS F1 -- the cross-config metric")
     print("=" * 100)
     metric_table(
         records,
-        "  Window predictions expanded onto the raw 50 Hz timeline (last-window-wins),",
-        "  pooled over the 5 LOSO folds, scored against the original per-sample labels.",
+        how,
+        f"  pooled over the {n_folds} LOSO folds, scored against the original per-sample labels.",
         lambda r: r["sample_f1"], lambda r: r["sample_macro"],
     )
 
@@ -744,7 +763,10 @@ def report_precision_recall(records):
     print("[6] SAMPLE-LEVEL PRECISION / RECALL -- per config, diagnostic")
     print("=" * 100)
     for r in records:
-        print(f"\n  {r['name']}   sw_length={r['sw_length']}s  win_len={r['win_len']}  step={r['step']}")
+        if r.get("dense"):
+            print(f"\n  {r['name']}   dense: seq_len={r['win_len']} ({r['sw_length']}s)  step={r['step']}")
+        else:
+            print(f"\n  {r['name']}   sw_length={r['sw_length']}s  win_len={r['win_len']}  step={r['step']}")
         print(f"    {'class':<12} {'support':>10} {'share':>8} {'precision':>10} {'recall':>8} "
               f"{'F1':>8}   {'win_F1':>8} {'win_supp':>9}")
         for c, name in enumerate(CLASS_NAMES):
@@ -780,14 +802,16 @@ def report_sanity(records):
         return
 
     reb = CLASS_NAMES.index("rebound")
+    n_folds = len(records[0]["folds"])
+    max_hdr = f"max ({n_folds}*step)"
 
-    print("\n  (a) coverage: covered samples vs the raw sample count for the 5 LOSO subjects")
+    print(f"\n  (a) coverage: covered samples vs the raw sample count for the {n_folds} LOSO subjects")
     print("      The gap is the trailing tail past the final window -- at most `step` per fold,")
-    print("      so at most 5*step overall.")
-    print(f"\n      {'config':<24} {'raw':>10} {'covered':>10} {'gap':>7} {'max (5*step)':>13} {'coverage':>10}")
+    print(f"      so at most {n_folds}*step overall.")
+    print(f"\n      {'config':<24} {'raw':>10} {'covered':>10} {'gap':>7} {max_hdr:>14} {'coverage':>10}")
     for r in records:
         print(f"      {r['name']:<24} {r['n_raw']:>10} {r['n_covered']:>10} "
-              f"{r['n_raw'] - r['n_covered']:>7} {5 * r['step']:>13} {r['coverage']:>10.5f}")
+              f"{r['n_raw'] - r['n_covered']:>7} {n_folds * r['step']:>14} {r['coverage']:>10.5f}")
 
     print("\n  (b) sample-level vs window-level macro F1, within each config")
     print("      Expect close but not identical: the two score different populations.")
@@ -807,6 +831,9 @@ def report_sanity(records):
     print("\n  (d) recorded window-level anchors, for comparison with the 1s row of table [3]")
     print("      Verbatim from grid_read.py:61-62. These are BASELINE numbers -- they apply only")
     print("      to a 1s run of the unaugmented baseline, and only at the stated seed.")
+    if n_folds != EXPECTED_FOLD_COUNT:
+        print(f"      NOTE: these are {EXPECTED_FOLD_COUNT}-fold anchors; they do not apply to this "
+              f"{n_folds}-fold run.")
     print(f"\n      seed 1          : rebound={ANCHOR_WINDOW_SEED1['rebound']:.4f}  "
           f"layup={ANCHOR_WINDOW_SEED1['layup']:.4f}  walking={ANCHOR_WINDOW_SEED1['walking']:.4f}  "
           f"macro={ANCHOR_WINDOW_SEED1['macro']:.4f}")
@@ -834,6 +861,59 @@ def report_sanity(records):
 
 
 # --------------------------------------------------------------------------- #
+# CSV export
+# --------------------------------------------------------------------------- #
+
+CSV_ID_KEYS = ("name", "network", "seed")
+CSV_COLUMNS = (["name", "network", "seed", "results_dir", "metric"] + list(CLASS_NAMES)
+               + ["macro_F1", "n_covered", "n_raw", "coverage"])
+
+
+def check_csv_path(path, overwrite):
+    """Run before any scoring, so an existing file fails fast rather than after the long run."""
+    if os.path.exists(path) and not overwrite:
+        fail(f"--csv {path} already exists. Pass --overwrite to replace it.")
+    parent = os.path.dirname(os.path.abspath(path))
+    if not os.path.isdir(parent):
+        fail(f"--csv {path}: directory {parent} does not exist")
+
+
+def write_csv(records, path):
+    """
+    One row per (config, metric): the values of tables [2] ("sample") and [3] ("window"),
+    at full float precision. name/network/seed come from each run's cfg.txt, never from
+    the directory name. n_covered is what the printed tables head 'n_samples'. A dense
+    record has no window-level result, so it gets its "sample" row only -- no placeholder.
+    """
+    import csv
+
+    rows = []
+    for r in records:
+        cfg = load_cfg(r["dir"])
+        missing = [k for k in CSV_ID_KEYS if k not in cfg or cfg[k] in (None, "")]
+        if missing:
+            fail(f"{r['dir']}/cfg.txt has no {missing} for the CSV; refusing to guess them "
+                 "from the directory name.")
+        ident = {k: cfg[k] for k in CSV_ID_KEYS}
+        metrics = [("sample", "sample_f1", "sample_macro")]
+        if not r.get("dense"):
+            metrics.append(("window", "window_f1", "window_macro"))
+        for metric, f1_key, macro_key in metrics:
+            row = dict(ident, results_dir=r["dir"], metric=metric)
+            row.update({name: repr(float(v)) for name, v in zip(CLASS_NAMES, r[f1_key])})
+            row.update(macro_F1=repr(float(r[macro_key])), n_covered=r["n_covered"],
+                       n_raw=r["n_raw"], coverage=repr(float(r["coverage"])))
+            rows.append(row)
+
+    with open(path, "w", newline="") as fid:
+        writer = csv.DictWriter(fid, fieldnames=CSV_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+    per = "sample only (dense)" if any(r.get("dense") for r in records) else "sample/window"
+    print(f"\n  wrote {len(rows)} rows ({len(records)} config(s) x {per}) to {path}")
+
+
+# --------------------------------------------------------------------------- #
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
@@ -858,7 +938,16 @@ def main():
     parser.add_argument("--npz_pattern", default=None,
                         help="Explicit glob containing '{fold}', overriding npz auto-detection. "
                              "Only needed when a run dir holds more than one npz per fold.")
+    parser.add_argument("--csv", default=None, metavar="PATH",
+                        help="Also write tables [2] and [3] as CSV, one row per (config, metric), "
+                             "at full float precision. Refuses to replace an existing file "
+                             "without --overwrite. A --dense run writes sample rows only.")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Allow --csv to replace an existing file.")
     args = parser.parse_args()
+
+    if args.csv:
+        check_csv_path(args.csv, args.overwrite)
 
     results_dirs = [d for group in args.results_dir for d in group]
     seen = set()
@@ -903,6 +992,9 @@ def main():
     report_delta(records)
     report_precision_recall(records)
     report_sanity(records)
+
+    if args.csv:
+        write_csv(records, args.csv)
 
     print("\n" + "=" * 100)
     print("Read table [2] across rows. Table [3] is per-row diagnostic context only.")

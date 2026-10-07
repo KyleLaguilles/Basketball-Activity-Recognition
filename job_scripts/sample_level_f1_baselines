@@ -1,0 +1,44 @@
+# Sample-level F1 for the 24-fold loso_G baselines, seeds 1-3. Run from the repo root.
+#
+# Two invocations: --dense applies to every --results_dir in a call, so the IC dense runs
+# cannot share a call with the windowed ones. Their table [2] rows are still comparable
+# (both are scored on the raw 50 Hz timeline); check the coverage column before
+# differencing by hand.
+#
+# Shallow DCLSTM: each seed has two byte-identical run dirs (same npz, same log). One of each
+# pair is used below. 2026-09-18_16-19-59_24fold_shallow_seed2 is an empty aborted run.
+#
+# --csv refuses to replace an existing file; add --overwrite to re-run.
+
+L=logs/subset_specific/loso_G
+mkdir -p results/sample_level_f1
+
+# Windowed: shallow DCLSTM, DCLSTM, IC windowed, DCC Uni, DCC Bi
+python analysis/sample_level_f1.py \
+    --csv results/sample_level_f1/24fold_windowed_baselines.csv \
+    --results_dir \
+        $L/shallow_deepconvlstm/2026-09-18_16-21-32_24fold_shallow_seed1 \
+        $L/shallow_deepconvlstm/2026-09-18_19-36-43_24fold_shallow_seed2 \
+        $L/shallow_deepconvlstm/2026-09-18_22-52-47_24fold_shallow_seed3 \
+        $L/deepconvlstm/2026-09-23_16-09-31_24fold_deepconvlstm_seed1 \
+        $L/deepconvlstm/2026-09-23_16-47-05_24fold_deepconvlstm_seed2 \
+        $L/deepconvlstm/2026-09-23_17-25-32_24fold_deepconvlstm_seed3 \
+        $L/inceptioncontext/2026-09-11_18-13-22_24fold_windowed_seed1 \
+        $L/inceptioncontext/2026-09-11_19-25-31_24fold_windowed_seed2 \
+        $L/inceptioncontext/2026-09-11_20-37-56_24fold_windowed_seed3 \
+        $L/deepconvcontext/2026-09-23_18-07-04_24fold_deepconvcontext_uni_seed1 \
+        $L/deepconvcontext/2026-09-23_18-57-27_24fold_deepconvcontext_uni_seed2 \
+        $L/deepconvcontext/2026-09-23_20-36-50_24fold_deepconvcontext_uni_seed3 \
+        $L/deepconvcontext/2026-09-23_19-34-28_24fold_deepconvcontext_bi_seed1 \
+        $L/deepconvcontext/2026-09-23_23-48-17_24fold_deepconvcontext_bi_seed2 \
+        $L/deepconvcontext/2026-09-24_01-14-43_24fold_deepconvcontext_bi_seed3 \
+    | tee results/sample_level_f1/24fold_windowed_baselines.txt
+
+# Dense: IC dense
+python analysis/sample_level_f1.py --dense \
+    --csv results/sample_level_f1/24fold_dense_baselines.csv \
+    --results_dir \
+        $L/inceptioncontext/2026-09-11_12-06-12_24fold_dense_seed1 \
+        $L/inceptioncontext/2026-09-11_14-07-46_24fold_dense_seed2 \
+        $L/inceptioncontext/2026-09-11_16-09-07_24fold_dense_seed3 \
+    | tee results/sample_level_f1/24fold_dense_baselines.txt

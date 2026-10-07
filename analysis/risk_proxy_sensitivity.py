@@ -466,14 +466,33 @@ def report_proxy_definition():
     print(f"  {N_CLASSES} classes exactly; both were asserted before any run was loaded.")
 
 
-def report_anchors(paired, den_all_sessions):
-    """[2]: reproduce the sibling script's rebound rank correlations, or stop."""
+def report_anchors(paired, den_all_sessions, anchors=None):
+    """
+    [2]: reproduce the sibling script's rebound rank correlations, or stop.
+
+    `anchors` overrides the recorded constants, for a run pair other than the one in
+    the usage block. The guard is unchanged -- the observed value must still reconcile
+    with analysis/session_rank_stability.py on the SAME run pair, to the same
+    tolerance. An overridden anchor is printed as such, so an output can never be
+    mistaken for one certified against the recorded pair.
+    """
+    a = dict(win_rho=ANCHOR_PAIRED_REBOUND["win_rho"],
+             den_rho=ANCHOR_PAIRED_REBOUND["den_rho"],
+             dense_all_rho=ANCHOR_DENSE_ALL_REBOUND["rho"],
+             dense_all_p=ANCHOR_DENSE_ALL_REBOUND["p"])
+    overridden = sorted(k for k, v in (anchors or {}).items() if v is not None and v != a[k])
+    a.update({k: v for k, v in (anchors or {}).items() if v is not None})
     print("\n" + RULE)
     print("[2] ANCHOR REPRODUCTION -- rebound duration-rank rho, vs session_rank_stability.py")
     print(RULE)
     print("\n  The risk scores are built from the same per-session counts these correlations")
     print("  use. If they have moved, the loading path has changed and nothing below is")
     print("  comparable to previously reported numbers.\n")
+    if overridden:
+        print("  AMENDMENT: anchor(s) " + ", ".join(overridden) + " supplied on the command")
+        print("  line, so this panel certifies the counts against a run pair other than the")
+        print("  recorded one. The override value must itself come from a")
+        print("  session_rank_stability.py run on THESE dirs, or it certifies nothing.\n")
 
     c = CLASS_NAMES.index("rebound")
     checks = []
@@ -484,7 +503,7 @@ def report_anchors(paired, den_all_sessions):
             est = np.array([paired[r][key][c] for r in recs], float)
             rho, _ = safe_spearman(est, truth)
             checks.append((f"paired n={len(recs)} {key:<8}", rho,
-                           ANCHOR_PAIRED_REBOUND[anchor_key], ANCHOR_RHO_TOL))
+                           a[anchor_key], ANCHOR_RHO_TOL))
 
     if den_all_sessions is not None:
         recs_a = sorted(den_all_sessions)
@@ -492,9 +511,9 @@ def report_anchors(paired, den_all_sessions):
         e_a = np.array([den_all_sessions[r]["est"][c] for r in recs_a], float)
         rho_a, p_a = safe_spearman(e_a, t_a)
         checks.append((f"dense-only n={len(recs_a)} rho ", rho_a,
-                       ANCHOR_DENSE_ALL_REBOUND["rho"], ANCHOR_RHO_TOL))
+                       a["dense_all_rho"], ANCHOR_RHO_TOL))
         checks.append((f"dense-only n={len(recs_a)} p   ", p_a,
-                       ANCHOR_DENSE_ALL_REBOUND["p"], ANCHOR_P_TOL))
+                       a["dense_all_p"], ANCHOR_P_TOL))
 
     if not checks:
         fail("no anchor could be checked: neither panel was loaded.")
@@ -848,6 +867,17 @@ def main():
                         help="Also report the calibrated variant (pre-reg 5.2(f)): "
                              "per-condition leave-one-subject-out corrections applied to "
                              + ", ".join(CALIBRATED_CLASSES) + " before scoring.")
+    parser.add_argument("--anchor_win_rho", type=float, default=None, metavar="RHO",
+                        help="Override the recorded paired windowed rebound rank rho. Use "
+                             "when scoring a run pair other than the one in the usage "
+                             "block; take the value from session_rank_stability.py [2] on "
+                             "the SAME dirs.")
+    parser.add_argument("--anchor_den_rho", type=float, default=None, metavar="RHO",
+                        help="Override the recorded paired dense rebound rank rho.")
+    parser.add_argument("--anchor_dense_all_rho", type=float, default=None, metavar="RHO",
+                        help="Override the recorded dense-only panel rebound rank rho.")
+    parser.add_argument("--anchor_dense_all_p", type=float, default=None, metavar="P",
+                        help="Override the recorded dense-only panel rebound rank p-value.")
     parser.add_argument("--dense_only", action="store_true",
                         help="Run the n=24 dense-only panel only (pre-reg 5.2(g)).")
     sc.add_session_args(parser)
@@ -861,6 +891,10 @@ def main():
         if missing:
             fail(f"the paired panel needs {' and '.join(missing)}; pass --dense_only to run "
                  "the n=24 panel alone.")
+
+    anchors = {"win_rho": args.anchor_win_rho, "den_rho": args.anchor_den_rho,
+               "dense_all_rho": args.anchor_dense_all_rho,
+               "dense_all_p": args.anchor_dense_all_p}
 
     labels_df, segments = sc.load_common(args)
     cls_idx = [CLASS_NAMES.index(n) for n in CALIBRATED_CLASSES]
@@ -880,7 +914,7 @@ def main():
         print("  get both panels in one invocation.\n")
         report_header(None, None, None, den_all_meta, den_all_sessions)
         report_proxy_definition()
-        report_anchors(None, den_all_sessions)
+        report_anchors(None, den_all_sessions, anchors)
         n_all = len(den_all_sessions)
         m_all = panel_metrics(den_all_sessions, ("est",))
         report_dense_only(m_all, n_all)
@@ -915,7 +949,7 @@ def main():
 
     report_header(paired, win_meta, den_meta, den_all_meta, den_all_sessions)
     report_proxy_definition()
-    report_anchors(paired, den_all_sessions)
+    report_anchors(paired, den_all_sessions, anchors)
 
     base = panel_metrics(paired, est_keys, recs)
     report_scores(base, recs, est_keys, key_label, "THE SCORES")

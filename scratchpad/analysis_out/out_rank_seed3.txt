@@ -1,0 +1,125 @@
+================================================================================================================
+SESSION RANK STABILITY -- does dense preserve the true ordering of sessions?
+================================================================================================================
+
+  windowed run   : 24fold_windowed_seed3   [logs/subset_specific/loso_G/inceptioncontext/2026-09-11_20-37-56_24fold_windowed_seed3]
+                   sw_length=1.0s sw_overlap=50% -> win_len=50 step=25 samples
+  dense run      : 24fold_dense_seed3   [logs/subset_specific/loso_G/inceptioncontext/2026-09-11_16-09-07_24fold_dense_seed3]
+                   dense_seq_len=500 dense_min_seg=25
+
+sessions       : 24 recordings over 24 subjects
+  capture day  : eu   13 session(s)  05d8_eu, 0846_eu, 10f0_eu, 2dd9_eu, 4991_eu, 4d70_eu, 9bd4_eu, a0da_eu, ac59_eu, b512_eu, ce9d_eu, e90f_eu, f2ad_eu
+  capture day  : na   11 session(s)  0846_na, 10f0_na, 2dd9_na, 4d70_na, 9bd4_na, a0da_na, ac59_na, b512_na, c6f3_na, ce9d_na, f2ad_na
+
+  n = 24 sessions. Every duration below is scored on the common covered
+  mask of the two runs, against one truth asserted equal across both reconstructions.
+
+================================================================================================================
+[1] THE RANKING, SPELLED OUT -- rebound (the headline class)
+================================================================================================================
+
+  rank 1 = longest predicted/true duration. This is the table the correlations
+  below compress into two numbers; read it first so those numbers mean something.
+
+  session         true_s  rank      win_s  rank     d      den_s  rank     d
+  --------------------------------------------------------------------------
+  4d70_na          24.66     1      26.00     1    +0      25.80     1    +0
+  ac59_eu          21.12     2      12.00     3    +1      15.74     2    +0
+  9bd4_eu          16.58     3       0.50    21   +18       3.70    15   +12
+  ce9d_na          16.48     4       7.00     6    +2       9.24     5    +1
+  a0da_eu          16.42     5       3.50    13    +8       9.46     4    -1
+  f2ad_eu          12.82     6       9.50     5    -1      12.08     3    -3
+  4d70_eu           9.74     7       7.00     6    -1       4.62    14    +7
+  f2ad_na           8.90     8      19.50     2    -6       6.10    12    +4
+  ce9d_eu           8.68     9       3.00    14    +5       6.60    10    +1
+  e90f_eu           7.94    10       5.00     8    -2       5.72    13    +3
+  4991_eu           7.90    11       3.00    14    +3       7.68     8    -3
+  05d8_eu           7.88    12      10.00     4    -8       9.20     6    -6
+  b512_eu           7.36    13       5.00     8    -5       6.98     9    -4
+  2dd9_eu           7.36    13       4.00    12    -1       2.68    21    +8
+  ac59_na           6.38    15       2.50    16    +1       6.32    11    -4
+  2dd9_na           4.76    16       1.00    20    +4       1.28    23    +7
+  c6f3_na           4.08    17       0.00    23    +6       2.90    18    +1
+  9bd4_na           4.04    18       4.50    10    -8       8.98     7   -11
+  10f0_na           3.54    19       2.00    18    -1       0.96    24    +5
+  10f0_eu           3.32    20       0.50    21    +1       2.86    19    -1
+  0846_eu           3.12    21       1.50    19    -2       3.06    17    -4
+  a0da_na           2.92    22       4.50    10   -12       2.78    20    -2
+  b512_na           0.74    23       2.50    16    -7       3.14    16    -7
+  0846_na           0.00    24       0.00    23    -1       2.52    22    -2
+  --------------------------------------------------------------------------
+  mean |rank move|                                   4.33                   4.04
+  max  |rank move|                                     18                     12
+
+  'd' is signed rank displacement from truth: negative = ranked too high (the
+  method thinks this session had more of the class than it did).
+
+================================================================================================================
+[2] SPEARMAN RANK CORRELATION WITH TRUTH -- all nine classes
+================================================================================================================
+
+  rho close to +1 means the method orders the 24 sessions the way truth does.
+  'gain' = rho_dense - rho_windowed; POSITIVE supports the claim that dense
+  preserves the true ranking better. p-values are two-sided and uncorrected;
+  with n=24 they are weak evidence, and the DIFFERENCE of two rho values from the
+  same sessions is not tested here because no such test is informative at this n.
+
+  class          win_rho     win_p   den_rho     den_p      gain   supports  nonzero  note
+  ------------------------------------------------------------------------------------------------------------
+  dribbling  *    +0.955    0.0000    +0.889    0.0000    -0.066         no       24  
+  shot       *    +0.574    0.0033    +0.626    0.0011    +0.052        yes       20  
+  pass       *    +0.848    0.0000    +0.853    0.0000    +0.004        yes       23  
+  rebound    *    +0.614    0.0014    +0.723    0.0001    +0.108        yes       23    <<< headline
+  layup      *    +0.634    0.0009    +0.758    0.0000    +0.124        yes       19  
+  walking         +0.838    0.0000    +0.877    0.0000    +0.039        yes       24  
+  running         +0.858    0.0000    +0.871    0.0000    +0.013        yes       24  
+  standing        +0.370    0.0754    +0.223    0.2958    -0.147         no       24  
+  sitting         +0.817    0.0000    +0.825    0.0000    +0.008        yes       10  
+  ------------------------------------------------------------------------------------------------------------
+
+  '*' = ball action.  'nonzero' = sessions with any of that class (of 24).
+  DEGEN = the truth vector cannot carry a ranking; see [3].
+
+================================================================================================================
+[3] DEGENERATE CLASSES -- excluded from the verdict
+================================================================================================================
+
+  None. Every class's truth has at least 5 non-zero sessions
+  and at least 5 distinct values, so every rho in [2] is a ranking.
+================================================================================================================
+[4] VERDICT -- does dense preserve the true session ranking better?
+================================================================================================================
+
+  Of 9 interpretable classes, dense ranks sessions better in 7 and worse in 2.
+
+    dense BETTER : layup (+0.124), rebound (+0.108), shot (+0.052), walking (+0.039), running (+0.013), sitting (+0.008), pass (+0.004)
+    dense WORSE  : standing (-0.147), dribbling (-0.066)
+
+  HEADLINE CLASS -- rebound:
+    windowed  rho = +0.614  (p = 0.0014)
+    dense     rho = +0.723  (p = 0.0001)
+    gain          = +0.108
+
+    The claim HOLDS for rebound: dense tracks the true ordering more
+    closely than the windowed baseline.
+    Both rho values reach p < 0.05; the gap between them is still not tested,
+    for the reason given in [2].
+
+  Note what a rank result can and cannot say. Rank correlation is invariant to any
+  monotone rescaling, so a method can rank perfectly while being badly biased in
+  seconds -- that is precisely the case a single correction factor repairs
+  (analysis/calibration_factors.py). A method that ranks poorly cannot be repaired
+  that way, whatever its mean error. Read this table against [5] of
+  analysis/session_duration_error.py, not instead of it.
+
+================================================================================================================
+[5] DENSE-ONLY PANEL -- rho over every session the dense run covers
+================================================================================================================
+
+  None. The dense run covers the same 24 sessions as the windowed run,
+  so [2] already uses every session available.
+
+================================================================================================================
+Read [2] for the per-class correlations, [4] for whether the claim survives them.
+Nothing was written; this script is read-only.
+================================================================================================================
