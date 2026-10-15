@@ -241,10 +241,13 @@ def process_dir_dense(results_dir, labels_df, seam, npz_pattern, allow_partial):
         fail(f"labels file holds {len(label_ids)} samples, seam map describes "
              f"{seam['total_samples']}")
 
-    folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
+    # sample_level_f1's resolution, not `cfg.get("loso_subjects") or EXPECTED_FOLDS`: an
+    # all-subject run records `loso_subjects: []`, which that fallback silently turned into
+    # the 5 baseline folds. Folds come from the npz filenames, cross-checked against cfg.
+    folds = slf.resolve_dense_folds(results_dir, cfg)
     expect = len(folds)
     if not allow_partial and len(folds) not in (EXPECTED_FOLD_COUNT, ALL_SUBJECT_FOLD_COUNT):
-        fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
+        fail(f"{results_dir}: resolved {len(folds)} folds, expected "
              f"{EXPECTED_FOLD_COUNT} (the LOSO baseline) or {ALL_SUBJECT_FOLD_COUNT} "
              f"(every subject): {folds}. Pass --allow_partial_folds for a smoke test.")
     npz_paths = slf.discover_fold_npz(results_dir, folds, npz_pattern, expect_count=expect)
@@ -282,7 +285,13 @@ def process_dir(results_dir, labels_df, npz_pattern):
              f"requires {REQUIRED_SW_LENGTH}. The duration arithmetic generalizes, but the BOracle "
              "framing and the recorded anchors do not; re-run against a 1s baseline dir.")
 
-    folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
+    # No fallback to wp.EXPECTED_FOLDS, as in sample_level_f1.process_dir: an all-subject
+    # run records `loso_subjects: []`, and substituting the 5 baseline folds would silently
+    # score a different fold set.
+    folds = cfg.get("loso_subjects")
+    if not folds:
+        fail(f"{results_dir}/cfg.txt has loso_subjects={folds!r}. The windowed path needs the "
+             "fold list recorded explicitly; refusing to assume the 5 baseline folds.")
     if len(folds) not in (EXPECTED_FOLD_COUNT, ALL_SUBJECT_FOLD_COUNT):
         fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
              f"{EXPECTED_FOLD_COUNT} (the LOSO baseline) or {ALL_SUBJECT_FOLD_COUNT} "
