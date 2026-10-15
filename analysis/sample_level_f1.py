@@ -312,6 +312,20 @@ def expand_last_window_wins(y_pred_win, n_samples, win_len, step):
     return sample_pred
 
 
+def class_counts(y_true, y_pred):
+    """
+    Per-class TP / FP / FN / support over one fold's scored samples.
+
+    The additive form of the pooled per-class F1 below: summing these over folds and
+    taking 2TP / (2TP + FP + FN) reproduces f1_score on the concatenated samples, so a
+    caller can re-pool any multiset of folds (bootstrap_ci.py) without re-reading npz.
+    """
+    tp = np.bincount(y_true[y_true == y_pred], minlength=N_CLASSES).astype(np.int64)
+    n_pred = np.bincount(y_pred, minlength=N_CLASSES).astype(np.int64)
+    support = np.bincount(y_true, minlength=N_CLASSES).astype(np.int64)
+    return {"tp": tp, "fp": n_pred - tp, "fn": support - tp, "support": support}
+
+
 # --------------------------------------------------------------------------- #
 # per-directory processing
 # --------------------------------------------------------------------------- #
@@ -388,6 +402,7 @@ def process_dir(results_dir, labels_df, candidate_cache, npz_pattern):
             "n_windows": len(y_true_win), "n_samples": n_samples,
             "n_covered": n_cov, "coverage": n_cov / n_samples,
             "token_ok": fold == subj,
+            "counts": class_counts(y_true_sample[covered], sample_pred[covered]),
         })
 
         pred_parts.append(sample_pred[covered])
@@ -568,6 +583,7 @@ def process_dir_dense(results_dir, labels_df, seam, npz_pattern, allow_partial):
             "fold": fold, "subject": fold, "npz": os.path.basename(npz_paths[fold]),
             "n_windows": 0, "n_samples": raw_total, "n_covered": len(y_true),
             "coverage": len(y_true) / raw_total, "token_ok": True,
+            "counts": class_counts(y_true, y_pred),
         })
         pred_parts.append(y_pred)
         true_parts.append(y_true)
