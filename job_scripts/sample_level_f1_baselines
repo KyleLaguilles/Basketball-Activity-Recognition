@@ -42,3 +42,18 @@ python analysis/sample_level_f1.py --dense \
         $L/inceptioncontext/2026-09-11_14-07-46_24fold_dense_seed2 \
         $L/inceptioncontext/2026-09-11_16-09-07_24fold_dense_seed3 \
     | tee results/sample_level_f1/24fold_dense_baselines.txt
+
+python analysis/sample_level_f1.py --dense \
+    --csv results/sample_level_f1/24fold_dense_deepconvlstm_baselines.csv \
+    --results_dir \
+        $L/deepconvlstm/2026-10-02_19-06-24_24fold_dense_dclstm_seed1 \
+        $L/deepconvlstm/2026-10-02_19-06-24_24fold_dense_dclstm_seed2 \
+        $L/deepconvlstm/2026-10-02_19-06-24_24fold_dense_dclstm_seed3 \
+    | tee results/sample_level_f1/24fold_dense_deepconvlstm_baselines.txt
+
+    python analysis/boracle_duration_bias.py --dense \
+        --results_dir \ 
+            logs/subset_specific/loso_G/deepconvlstm/2026-10-02_19-06-24_24fold_dense_dclstm_seed1 \
+            logs/subset_specific/loso_G/deepconvlstm/2026-10-02_19-06-24_24fold_dense_dclstm_seed2 \
+            logs/subset_specific/loso_G/deepconvlstm/2026-10-02_19-06-24_24fold_dense_dclstm_seed3 \
+        --labels labels_export.csv.gz

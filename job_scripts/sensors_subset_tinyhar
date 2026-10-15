@@ -1,3 +1,18 @@
 python src/main.py --network tinyhar --name loso_DandW_seed_1 --test_type subset_specific --test_case loso_DandW --seed 1 --valid_epoch best --batch_size 100 --epochs 30 --weighted --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --cross_channel_aggregation_type FC --learning_rate 1e-4 --weight_decay 1e-06 --optimizer adam --weights_init xavier_normal --save_analysis --save_predictions
 python src/main.py --network tinyhar --name loso_DandW_seed_2 --test_type subset_specific --test_case loso_DandW --seed 2 --valid_epoch best --batch_size 100 --epochs 30 --weighted --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --cross_channel_aggregation_type FC --learning_rate 1e-4 --weight_decay 1e-06 --optimizer adam --weights_init xavier_normal --save_analysis --save_predictions
 python src/main.py --network tinyhar --name loso_DandW_seed_3 --test_type subset_specific --test_case loso_DandW --seed 3 --valid_epoch best --batch_size 100 --epochs 30 --weighted --sw_length 1.0 --sw_unit seconds --sw_overlap 50 --cross_channel_aggregation_type FC --learning_rate 1e-4 --weight_decay 1e-06 --optimizer adam --weights_init xavier_normal --save_analysis --save_predictions
+
+
+python analysis/boracle_duration_bias.py --results_dir <dclstm_dense_seedN> --dense
+python analysis/boracle_duration_bias.py --results_dir <dclstm_dense_seedN> --dense
+python analysis/boracle_duration_bias.py --results_dir <dclstm_dense_seedN> --dense
+
+python analysis/sample_level_f1.py       --results_dir logs/subset_specific/loso_G/deepconvlstm/2026-10-02_19-06-24_24fold_dense_dclstm_seed1 --dense   # precision / recall
+python analysis/sample_level_f1.py       --results_dir logs/subset_specific/loso_G/deepconvlstm/2026-10-02_19-06-24_24fold_dense_dclstm_seed2 --dense   # precision / recall
+python analysis/sample_level_f1.py       --results_dir logs/subset_specific/loso_G/deepconvlstm/2026-10-02_19-06-24_24fold_dense_dclstm_seed3 --dense   # precision / recall
+
+Also run sample_level_f1.py --dense on the three dense InceptionContext dirs to get rebound P and R for comparison:
+
+seed 1: 2026-09-11_12-06-12_24fold_dense_seed1
+seed 2: 2026-09-11_14-07-46_24fold_dense_seed2
+seed 3: 2026-09-11_16-09-07_24fold_dense_seed3
