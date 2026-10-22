@@ -203,7 +203,13 @@ def _windowed_subject_arrays(results_dir, labels_df, npz_pattern, allow_partial)
              "baseline. Refusing to read a per-sample npz as windowed.")
 
     sw_length, sw_overlap, win_len, step = slf.derive_windowing(cfg, results_dir)
-    folds = cfg.get("loso_subjects") or list(wp.EXPECTED_FOLDS)
+    # No fallback to wp.EXPECTED_FOLDS, as in sample_level_f1.process_dir: an all-subject
+    # run records `loso_subjects: []`, and substituting the 5 baseline folds would silently
+    # score a different fold set.
+    folds = cfg.get("loso_subjects")
+    if not folds:
+        fail(f"{results_dir}/cfg.txt has loso_subjects={folds!r}. The windowed path needs the "
+             "fold list recorded explicitly; refusing to assume the 5 baseline folds.")
     expect = len(folds)
     if not allow_partial and len(folds) not in (slf.EXPECTED_FOLD_COUNT, slf.ALL_SUBJECT_FOLD_COUNT):
         fail(f"{results_dir}: cfg loso_subjects lists {len(folds)} folds, expected "
