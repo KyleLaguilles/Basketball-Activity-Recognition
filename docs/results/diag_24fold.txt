@@ -1,0 +1,323 @@
+====================================================================================================
+SCREENING-PROTOCOL REBOUND DIAGNOSTICS ON THE 24-FOLD loso_G RUNS (InceptionContext), seeds 1-3
+Generated 2026-10-22 from existing npz/checkpoints, CPU only, no retraining.
+Scripts: analysis/diag_24fold_dense.py, analysis/diag_24fold_windowed.py, analysis/diag_24fold_knn.py
+====================================================================================================
+
+SUMMARY -- screening value -> 24-fold mean +/- sample std (ddof=1) over seeds 1-3
+  (a) events wholly missed                     56.5% (91/161)  -> 54.0 +/- 3.3%   (50.3 / 56.5 / 55.3)
+      missed samples from missed events        74.3%           -> 69.8 +/- 3.8%   (65.4 / 72.3 / 71.8)
+      missed samples from trimmed edges        23.9%           -> 28.6 +/- 4.2%   (33.5 / 25.9 / 26.3)
+  (b) rebound samples -> running, dense        43.3%           -> 39.0 +/- 0.8%   (39.2 / 38.2 / 39.7)
+      rebound windows -> running, windowed     44.9%           -> 40.6 +/- 2.9%   (37.5 / 40.9 / 43.3; pooled 500/1233 = 40.6%)
+  (c) pure share | rebound -> running          36.2% (109/301) -> 27.7 +/- 1.6%   (26.0 / 29.2 / 28.1; pooled 139/500 = 27.8%)
+      pure share | rebound misclassified       34.4% (189/549) -> 26.2 +/- 0.5%   (25.5 / 26.5 / 26.4; pooled 256/979 = 26.1%)
+  (d) k=10, neighbors by true label (old values are means of logs/knn_seed{1,2,3}.txt)
+      target (pure reb -> running): running    49.7%           -> 49.6 +/- 1.6%   (48.8 / 48.6 / 51.4)
+      target: rebound                           9.1%           -> 10.7 +/- 0.6%   (10.0 / 11.2 / 10.8)
+      control (correct rebound): running       39.7%           -> 40.2 +/- 0.9%   (40.3 / 39.4 / 41.1)
+      control: rebound                         15.1%           -> 16.3 +/- 0.3%   (16.3 / 16.0 / 16.6)
+      sanity (correct running): running        82.0%           -> 81.7 +/- 0.1%   (81.8 / 81.5 / 81.6)
+
+SANITY ANCHORS (all held)
+  dense rebound recall    0.2300 / 0.2319 / 0.2288  mean 0.2302  (anchor ~0.230)
+  dense rebound precision 0.2622 / 0.2853 / 0.2949  mean 0.2808  (anchor ~0.281)
+  rebound samples 10,337 every seed; events 161 (span seams) / 162 (seam-aware), unchanged
+  under the <id>_<eu|na> keys -- event_rebound_recall's ANCHOR_EVENTS_ALL14 assertion passed.
+  k-NN anchor: seed 1 fold 05d8_eu forward pass from checkpoint_best reproduces the saved npz
+  y_pred exactly (0 of 2469 differ).
+
+NOTES
+  * Screening sources, reproduced in Phase 1 with the pre-rekey code (git 77a1c86) on the
+    14-subject runs: (a) 2026-09-04_17-48-10_dense_b10_all14_seed1; (b) dense
+    2026-09-04_16-04-41_dense_b10_seed1 (5-fold; the all-14 run gives 41.0%); (b) windowed and
+    (c) July baselines 2026-07-17_{07-56-30,11-15-00,11-15-03} (5-fold); (d) lc_frac1.0_ckpt
+    re-runs. The July baseline dirs hold no checkpoints, so (d) was not re-run on them.
+  * (c) "109/301" is the pure share among rebound windows predicted RUNNING; the share among
+    ALL misclassified rebound windows is the second row.
+  * (d) Checkpoint certification: CPU vs saved GPU predictions disagree on 0 / 4 / 4 of 55,048
+    windows (seeds 1/2/3). Seed 3 fold f2ad_eu has 3 of 2483 (agreement 0.99879), below
+    knn_adjacency's default 0.999 (sized for ~5000-window 5-fold folds), so the run used
+    --agree_tol 0.998. No target window is touched by a disagreement; selection uses the saved
+    npz predictions. Target-count bounds and POOLED_ONSET_COUNT were not checked (flags unset).
+
+
+====================================================================================================
+(a) + dense (b) -- InceptionContext dense, event rule: spanning seams
+====================================================================================================
+  seed 1  24 folds  logs/subset_specific/loso_G/inceptioncontext/2026-09-11_12-06-12_24fold_dense_seed1
+          event total    : 161  (spanning seams rule) -- matches the certified dataset total.
+          events=161  wholly missed=81  rebound samples=10337  missed=7960  (lead 1166 / trail 1497 / interior 89 / whole-event 5208)  rebound->running=4050
+  seed 2  24 folds  logs/subset_specific/loso_G/inceptioncontext/2026-09-11_14-07-46_24fold_dense_seed2
+          event total    : 161  (spanning seams rule) -- matches the certified dataset total.
+          events=161  wholly missed=91  rebound samples=10337  missed=7940  (lead 799 / trail 1261 / interior 142 / whole-event 5738)  rebound->running=3950
+  seed 3  24 folds  logs/subset_specific/loso_G/inceptioncontext/2026-09-11_16-09-07_24fold_dense_seed3
+          event total    : 161  (spanning seams rule) -- matches the certified dataset total.
+          events=161  wholly missed=89  rebound samples=10337  missed=7972  (lead 842 / trail 1253 / interior 154 / whole-event 5723)  rebound->running=4104
+
+  metric                                      seed 1    seed 2    seed 3      mean     std
+  ----------------------------------------------------------------------------------------
+  events wholly missed (%)                      50.3      56.5      55.3      54.0     3.3
+  missed samples from missed events (%)         65.4      72.3      71.8      69.8     3.8
+  missed samples from trimmed edges (%)         33.5      25.9      26.3      28.6     4.2
+    of which leading edge (%)                   14.6      10.1      10.6      11.8     2.5
+    of which trailing edge (%)                  18.8      15.9      15.7      16.8     1.7
+  missed samples from interior gaps (%)          1.1       1.8       1.9       1.6     0.4
+  rebound samples predicted running (%)         39.2      38.2      39.7      39.0     0.8
+  rebound recall                              0.2300    0.2319    0.2288    0.2302  0.0016
+  rebound precision                           0.2622    0.2853    0.2949    0.2808  0.0168
+
+  std is the sample std (ddof=1) across seeds. Edge-trim + whole-event + interior = 100%.
+
+====================================================================================================
+(c) + windowed (b) -- InceptionContext windowed, rebound windows (last-sample label)
+====================================================================================================
+  seed 1  logs/subset_specific/loso_G/inceptioncontext/2026-09-11_18-13-22_24fold_windowed_seed1
+  seed 2  logs/subset_specific/loso_G/inceptioncontext/2026-09-11_19-25-31_24fold_windowed_seed2
+  seed 3  logs/subset_specific/loso_G/inceptioncontext/2026-09-11_20-37-56_24fold_windowed_seed3
+
+  folds certified: 24 (window count + byte-identical last-sample labels; 0 fold token(s) resolved to a different subject)
+  val windows: 55048   rebound-labeled: 411   of which pure: 103   (seed-invariant)
+
+            reb win  ->running      %  pure|run      %   wrong  pure|wrong      %
+  seed 1        411        154   37.5        40   26.0     333          85   25.5
+  seed 2        411        168   40.9        49   29.2     317          84   26.5
+  seed 3        411        178   43.3        50   28.1     329          87   26.4
+  pooled       1233        500   40.6       139   27.8     979         256   26.1
+
+  per-seed mean +/- std (ddof=1):  ->running 40.6 +/- 2.9%   pure|running 27.7 +/- 1.6%   pure|wrong 26.2 +/- 0.5%
+
+  ->running = rebound windows predicted running; pure|run = pure share of those (old 109/301 rule);
+  wrong = rebound windows predicted anything but rebound; pure|wrong = pure share of those (old 189/549 rule).
+
+====================================================================================================
+(d) k-NN ADJACENCY IN 128-d STAGE 1 FEATURE SPACE -- CPU only
+====================================================================================================
+  seed 1  logs/subset_specific/loso_G/inceptioncontext/2026-09-11_18-13-22_24fold_windowed_seed1   (24 checkpoint_best files)
+  seed 2  logs/subset_specific/loso_G/inceptioncontext/2026-09-11_19-25-31_24fold_windowed_seed2   (24 checkpoint_best files)
+  seed 3  logs/subset_specific/loso_G/inceptioncontext/2026-09-11_20-37-56_24fold_windowed_seed3   (24 checkpoint_best files)
+
+  window reconstruction certified: 24 folds, 55048 val windows
+
+----------------------------------------------------------------------------------------------------
+  SEED 1
+----------------------------------------------------------------------------------------------------
+
+  [A] checkpoint certification, seed 1 (agreement >= 0.998)
+      05d8_eu  n= 2469  agreement=1.000000  disagreements=0
+      0846_eu  n=  746  agreement=1.000000  disagreements=0
+      0846_na  n= 2034  agreement=1.000000  disagreements=0
+      10f0_eu  n= 1845  agreement=1.000000  disagreements=0
+      10f0_na  n= 2614  agreement=1.000000  disagreements=0
+      2dd9_eu  n= 1337  agreement=1.000000  disagreements=0
+      2dd9_na  n= 2431  agreement=1.000000  disagreements=0
+      4991_eu  n= 2695  agreement=1.000000  disagreements=0
+      4d70_eu  n= 2460  agreement=1.000000  disagreements=0
+      4d70_na  n= 2610  agreement=1.000000  disagreements=0
+      9bd4_eu  n= 2507  agreement=1.000000  disagreements=0
+      9bd4_na  n= 2346  agreement=1.000000  disagreements=0
+      a0da_eu  n= 2501  agreement=1.000000  disagreements=0
+      a0da_na  n= 2381  agreement=1.000000  disagreements=0
+      ac59_eu  n= 2523  agreement=1.000000  disagreements=0
+      ac59_na  n= 2202  agreement=1.000000  disagreements=0
+      b512_eu  n= 2021  agreement=1.000000  disagreements=0
+      b512_na  n= 2679  agreement=1.000000  disagreements=0
+      c6f3_na  n= 2207  agreement=1.000000  disagreements=0
+      ce9d_eu  n= 2506  agreement=1.000000  disagreements=0
+      ce9d_na  n= 2562  agreement=1.000000  disagreements=0
+      e90f_eu  n= 2345  agreement=1.000000  disagreements=0
+      f2ad_eu  n= 2483  agreement=1.000000  disagreements=0
+      f2ad_na  n= 2544  agreement=1.000000  disagreements=0
+      total disagreements: 0 of 55048 windows
+
+  [C] targets: pure rebound windows predicted running = 40  (of 103 pure / 411 rebound windows); controls: correct rebound 78, correct running 11124
+      targets touched by a CPU/GPU disagreement: 0
+      target-count bounds: NOT CHECKED (--min_targets/--max_targets unset)
+      pooled onset count: NOT COMPARED (--pooled_onset_count unset; the 109 is a 5-fold figure)
+
+  [D/E] k-NN, euclidean, full 128-d, self excluded
+    k = 5   by neighbor TRUE label
+        Pure rebound -> running (n=40)     running:  45.5% +/- 30.4%    rebound:  11.5% +/- 14.9%
+        Correct rebound (n=78)             running:  35.9% +/- 32.6%    rebound:  22.1% +/- 20.8%   [control]
+        Correct running (n=11124)          running:  82.3% +/- 26.8%    rebound:   0.5% +/-  3.5%   [sanity]
+    k = 5   by neighbor PREDICTED label
+        Pure rebound -> running (n=40)     running:  70.0% +/- 24.4%    rebound:   6.5% +/- 11.4%
+        Correct rebound (n=78)             running:  43.8% +/- 30.6%    rebound:  20.3% +/- 22.9%   [control]
+        Correct running (n=11124)          running:  83.3% +/- 27.9%    rebound:   0.2% +/-  2.5%   [sanity]
+    k = 10   by neighbor TRUE label
+        Pure rebound -> running (n=40)     running:  48.8% +/- 27.6%    rebound:  10.0% +/- 10.9%
+        Correct rebound (n=78)             running:  40.3% +/- 27.7%    rebound:  16.3% +/- 14.4%   [control]
+        Correct running (n=11124)          running:  81.8% +/- 25.5%    rebound:   0.5% +/-  2.8%   [sanity]
+    k = 10   by neighbor PREDICTED label
+        Pure rebound -> running (n=40)     running:  69.8% +/- 21.1%    rebound:   5.3% +/-  7.5%
+        Correct rebound (n=78)             running:  47.7% +/- 26.3%    rebound:  14.0% +/- 15.7%   [control]
+        Correct running (n=11124)          running:  82.9% +/- 27.0%    rebound:   0.3% +/-  1.9%   [sanity]
+    k = 20   by neighbor TRUE label
+        Pure rebound -> running (n=40)     running:  52.8% +/- 24.0%    rebound:   7.8% +/-  7.8%
+        Correct rebound (n=78)             running:  42.2% +/- 25.0%    rebound:  13.5% +/- 11.8%   [control]
+        Correct running (n=11124)          running:  81.2% +/- 24.9%    rebound:   0.6% +/-  2.4%   [sanity]
+    k = 20   by neighbor PREDICTED label
+        Pure rebound -> running (n=40)     running:  70.0% +/- 20.6%    rebound:   3.8% +/-  6.4%
+        Correct rebound (n=78)             running:  48.4% +/- 24.9%    rebound:  11.9% +/- 12.3%   [control]
+        Correct running (n=11124)          running:  82.3% +/- 26.7%    rebound:   0.3% +/-  1.6%   [sanity]
+    k = 50   by neighbor TRUE label
+        Pure rebound -> running (n=40)     running:  56.7% +/- 21.1%    rebound:   5.7% +/-  4.7%
+        Correct rebound (n=78)             running:  47.5% +/- 23.1%    rebound:   9.7% +/-  7.7%   [control]
+        Correct running (n=11124)          running:  80.5% +/- 24.7%    rebound:   0.6% +/-  1.8%   [sanity]
+    k = 50   by neighbor PREDICTED label
+        Pure rebound -> running (n=40)     running:  71.5% +/- 18.8%    rebound:   2.6% +/-  3.4%
+        Correct rebound (n=78)             running:  51.5% +/- 25.1%    rebound:   8.8% +/-  8.6%   [control]
+        Correct running (n=11124)          running:  81.7% +/- 26.6%    rebound:   0.3% +/-  1.2%   [sanity]
+
+----------------------------------------------------------------------------------------------------
+  SEED 2
+----------------------------------------------------------------------------------------------------
+
+  [A] checkpoint certification, seed 2 (agreement >= 0.998)
+      05d8_eu  n= 2469  agreement=0.999595  disagreements=1
+      0846_eu  n=  746  agreement=1.000000  disagreements=0
+      0846_na  n= 2034  agreement=1.000000  disagreements=0
+      10f0_eu  n= 1845  agreement=1.000000  disagreements=0
+      10f0_na  n= 2614  agreement=1.000000  disagreements=0
+      2dd9_eu  n= 1337  agreement=1.000000  disagreements=0
+      2dd9_na  n= 2431  agreement=1.000000  disagreements=0
+      4991_eu  n= 2695  agreement=1.000000  disagreements=0
+      4d70_eu  n= 2460  agreement=1.000000  disagreements=0
+      4d70_na  n= 2610  agreement=1.000000  disagreements=0
+      9bd4_eu  n= 2507  agreement=1.000000  disagreements=0
+      9bd4_na  n= 2346  agreement=1.000000  disagreements=0
+      a0da_eu  n= 2501  agreement=1.000000  disagreements=0
+      a0da_na  n= 2381  agreement=0.999160  disagreements=2
+      ac59_eu  n= 2523  agreement=1.000000  disagreements=0
+      ac59_na  n= 2202  agreement=1.000000  disagreements=0
+      b512_eu  n= 2021  agreement=1.000000  disagreements=0
+      b512_na  n= 2679  agreement=0.999627  disagreements=1
+      c6f3_na  n= 2207  agreement=1.000000  disagreements=0
+      ce9d_eu  n= 2506  agreement=1.000000  disagreements=0
+      ce9d_na  n= 2562  agreement=1.000000  disagreements=0
+      e90f_eu  n= 2345  agreement=1.000000  disagreements=0
+      f2ad_eu  n= 2483  agreement=1.000000  disagreements=0
+      f2ad_na  n= 2544  agreement=1.000000  disagreements=0
+      total disagreements: 4 of 55048 windows
+
+  [C] targets: pure rebound windows predicted running = 49  (of 103 pure / 411 rebound windows); controls: correct rebound 94, correct running 11270
+      targets touched by a CPU/GPU disagreement: 0
+      target-count bounds: NOT CHECKED (--min_targets/--max_targets unset)
+      pooled onset count: NOT COMPARED (--pooled_onset_count unset; the 109 is a 5-fold figure)
+
+  [D/E] k-NN, euclidean, full 128-d, self excluded
+    k = 5   by neighbor TRUE label
+        Pure rebound -> running (n=49)     running:  50.2% +/- 28.6%    rebound:  12.2% +/- 16.2%
+        Correct rebound (n=94)             running:  35.3% +/- 28.7%    rebound:  18.9% +/- 19.3%   [control]
+        Correct running (n=11270)          running:  82.2% +/- 27.1%    rebound:   0.6% +/-  3.8%   [sanity]
+    k = 5   by neighbor PREDICTED label
+        Pure rebound -> running (n=49)     running:  71.0% +/- 26.5%    rebound:   5.3% +/- 11.4%
+        Correct rebound (n=94)             running:  40.6% +/- 29.8%    rebound:  15.3% +/- 20.8%   [control]
+        Correct running (n=11270)          running:  83.8% +/- 27.8%    rebound:   0.4% +/-  3.0%   [sanity]
+    k = 10   by neighbor TRUE label
+        Pure rebound -> running (n=49)     running:  48.6% +/- 26.3%    rebound:  11.2% +/- 12.2%
+        Correct rebound (n=94)             running:  39.4% +/- 25.9%    rebound:  16.0% +/- 15.2%   [control]
+        Correct running (n=11270)          running:  81.5% +/- 25.7%    rebound:   0.6% +/-  2.8%   [sanity]
+    k = 10   by neighbor PREDICTED label
+        Pure rebound -> running (n=49)     running:  68.8% +/- 25.1%    rebound:   5.9% +/-  9.6%
+        Correct rebound (n=94)             running:  42.3% +/- 28.3%    rebound:  13.1% +/- 14.0%   [control]
+        Correct running (n=11270)          running:  83.2% +/- 26.9%    rebound:   0.4% +/-  2.3%   [sanity]
+    k = 20   by neighbor TRUE label
+        Pure rebound -> running (n=49)     running:  50.4% +/- 26.0%    rebound:   9.1% +/-  9.1%
+        Correct rebound (n=94)             running:  42.7% +/- 24.7%    rebound:  11.9% +/- 10.5%   [control]
+        Correct running (n=11270)          running:  81.1% +/- 25.1%    rebound:   0.6% +/-  2.1%   [sanity]
+    k = 20   by neighbor PREDICTED label
+        Pure rebound -> running (n=49)     running:  68.3% +/- 23.0%    rebound:   5.4% +/-  7.3%
+        Correct rebound (n=94)             running:  46.4% +/- 27.0%    rebound:  10.8% +/- 11.0%   [control]
+        Correct running (n=11270)          running:  82.8% +/- 26.5%    rebound:   0.4% +/-  1.9%   [sanity]
+    k = 50   by neighbor TRUE label
+        Pure rebound -> running (n=49)     running:  54.2% +/- 22.3%    rebound:   6.8% +/-  5.5%
+        Correct rebound (n=94)             running:  46.6% +/- 23.6%    rebound:   8.3% +/-  6.9%   [control]
+        Correct running (n=11270)          running:  80.4% +/- 24.7%    rebound:   0.6% +/-  1.7%   [sanity]
+    k = 50   by neighbor PREDICTED label
+        Pure rebound -> running (n=49)     running:  69.1% +/- 19.8%    rebound:   4.3% +/-  5.4%
+        Correct rebound (n=94)             running:  48.5% +/- 26.6%    rebound:   8.1% +/-  7.8%   [control]
+        Correct running (n=11270)          running:  82.1% +/- 26.3%    rebound:   0.4% +/-  1.5%   [sanity]
+
+----------------------------------------------------------------------------------------------------
+  SEED 3
+----------------------------------------------------------------------------------------------------
+
+  [A] checkpoint certification, seed 3 (agreement >= 0.998)
+      05d8_eu  n= 2469  agreement=1.000000  disagreements=0
+      0846_eu  n=  746  agreement=1.000000  disagreements=0
+      0846_na  n= 2034  agreement=1.000000  disagreements=0
+      10f0_eu  n= 1845  agreement=1.000000  disagreements=0
+      10f0_na  n= 2614  agreement=1.000000  disagreements=0
+      2dd9_eu  n= 1337  agreement=1.000000  disagreements=0
+      2dd9_na  n= 2431  agreement=1.000000  disagreements=0
+      4991_eu  n= 2695  agreement=1.000000  disagreements=0
+      4d70_eu  n= 2460  agreement=1.000000  disagreements=0
+      4d70_na  n= 2610  agreement=1.000000  disagreements=0
+      9bd4_eu  n= 2507  agreement=1.000000  disagreements=0
+      9bd4_na  n= 2346  agreement=1.000000  disagreements=0
+      a0da_eu  n= 2501  agreement=1.000000  disagreements=0
+      a0da_na  n= 2381  agreement=1.000000  disagreements=0
+      ac59_eu  n= 2523  agreement=1.000000  disagreements=0
+      ac59_na  n= 2202  agreement=1.000000  disagreements=0
+      b512_eu  n= 2021  agreement=1.000000  disagreements=0
+      b512_na  n= 2679  agreement=1.000000  disagreements=0
+      c6f3_na  n= 2207  agreement=0.999547  disagreements=1
+      ce9d_eu  n= 2506  agreement=1.000000  disagreements=0
+      ce9d_na  n= 2562  agreement=1.000000  disagreements=0
+      e90f_eu  n= 2345  agreement=1.000000  disagreements=0
+      f2ad_eu  n= 2483  agreement=0.998792  disagreements=3
+      f2ad_na  n= 2544  agreement=1.000000  disagreements=0
+      total disagreements: 4 of 55048 windows
+
+  [C] targets: pure rebound windows predicted running = 50  (of 103 pure / 411 rebound windows); controls: correct rebound 82, correct running 11156
+      targets touched by a CPU/GPU disagreement: 0
+      target-count bounds: NOT CHECKED (--min_targets/--max_targets unset)
+      pooled onset count: NOT COMPARED (--pooled_onset_count unset; the 109 is a 5-fold figure)
+
+  [D/E] k-NN, euclidean, full 128-d, self excluded
+    k = 5   by neighbor TRUE label
+        Pure rebound -> running (n=50)     running:  49.6% +/- 28.6%    rebound:  14.0% +/- 17.7%
+        Correct rebound (n=82)             running:  37.3% +/- 29.8%    rebound:  21.2% +/- 21.2%   [control]
+        Correct running (n=11156)          running:  82.2% +/- 27.2%    rebound:   0.5% +/-  3.5%   [sanity]
+    k = 5   by neighbor PREDICTED label
+        Pure rebound -> running (n=50)     running:  67.2% +/- 29.3%    rebound:   5.2% +/- 11.3%
+        Correct rebound (n=82)             running:  43.9% +/- 30.4%    rebound:  20.2% +/- 24.2%   [control]
+        Correct running (n=11156)          running:  83.5% +/- 28.1%    rebound:   0.3% +/-  2.9%   [sanity]
+    k = 10   by neighbor TRUE label
+        Pure rebound -> running (n=50)     running:  51.4% +/- 26.5%    rebound:  10.8% +/- 10.5%
+        Correct rebound (n=82)             running:  41.1% +/- 26.2%    rebound:  16.6% +/- 15.0%   [control]
+        Correct running (n=11156)          running:  81.6% +/- 25.8%    rebound:   0.6% +/-  2.9%   [sanity]
+    k = 10   by neighbor PREDICTED label
+        Pure rebound -> running (n=50)     running:  67.2% +/- 25.4%    rebound:   5.6% +/- 11.8%
+        Correct rebound (n=82)             running:  46.7% +/- 27.8%    rebound:  15.1% +/- 16.0%   [control]
+        Correct running (n=11156)          running:  83.0% +/- 27.1%    rebound:   0.4% +/-  2.3%   [sanity]
+    k = 20   by neighbor TRUE label
+        Pure rebound -> running (n=50)     running:  53.4% +/- 25.3%    rebound:   9.1% +/-  7.9%
+        Correct rebound (n=82)             running:  43.8% +/- 23.8%    rebound:  12.9% +/- 11.8%   [control]
+        Correct running (n=11156)          running:  81.0% +/- 25.1%    rebound:   0.6% +/-  2.3%   [sanity]
+    k = 20   by neighbor PREDICTED label
+        Pure rebound -> running (n=50)     running:  69.4% +/- 24.4%    rebound:   4.3% +/-  9.1%
+        Correct rebound (n=82)             running:  49.9% +/- 26.1%    rebound:  12.1% +/- 12.7%   [control]
+        Correct running (n=11156)          running:  82.6% +/- 26.7%    rebound:   0.3% +/-  1.8%   [sanity]
+    k = 50   by neighbor TRUE label
+        Pure rebound -> running (n=50)     running:  55.6% +/- 22.8%    rebound:   5.9% +/-  5.3%
+        Correct rebound (n=82)             running:  50.1% +/- 21.5%    rebound:   9.0% +/-  7.3%   [control]
+        Correct running (n=11156)          running:  80.3% +/- 24.6%    rebound:   0.6% +/-  1.8%   [sanity]
+    k = 50   by neighbor PREDICTED label
+        Pure rebound -> running (n=50)     running:  67.9% +/- 22.2%    rebound:   3.4% +/-  6.0%
+        Correct rebound (n=82)             running:  52.0% +/- 25.8%    rebound:   9.1% +/-  9.4%   [control]
+        Correct running (n=11156)          running:  82.0% +/- 26.4%    rebound:   0.3% +/-  1.4%   [sanity]
+
+====================================================================================================
+  HEADLINE -- k = 10, neighbors by TRUE label, % of neighbors (mean over query windows)
+====================================================================================================
+            n_tgt  n_ctrl   target running   target rebound  control running  control rebound   sanity running
+  seed 1       40      78             48.8             10.0             40.3             16.3             81.8
+  seed 2       49      94             48.6             11.2             39.4             16.0             81.5
+  seed 3       50      82             51.4             10.8             41.1             16.6             81.6
+  mean                                49.6             10.7             40.2             16.3             81.7
+  std                                  1.6              0.6              0.9              0.3              0.1
+
+  target = pure rebound windows predicted running; control = correctly predicted rebound;
+  sanity = correctly predicted running. std is the sample std (ddof=1) across seeds.
